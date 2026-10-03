@@ -10,6 +10,7 @@ import {
   ReminderConfig,
   AuditLog,
   PortalType,
+  RegisterMemberData,
 } from '../types';
 import {
   INITIAL_ROLES,
@@ -25,12 +26,20 @@ import {
 
 interface AppContextType {
   // Auth & Navigation
+  isLoggedIn: boolean;
   currentAccount: UserAccount;
   currentMember: TeamMember;
   activePortal: PortalType;
   availableAccounts: UserAccount[];
   switchAccount: (accountId: string) => void;
   switchPortal: (portal: PortalType) => void;
+  logout: () => void;
+  checkEmailStatus: (email: string) => {
+    status: 'not_found' | 'needs_password' | 'has_password';
+    memberName?: string;
+    primaryRoleName?: string;
+  };
+  registerNewMember: (data: RegisterMemberData) => { success: boolean; message: string };
   setupFirstTimePassword: (email: string, newPassword: string) => { success: boolean; message: string };
   loginWithPassword: (email: string, password: string) => { success: boolean; message: string; requiresSetup?: boolean };
   changePassword: (newPassword: string) => { success: boolean; message: string };
@@ -147,6 +156,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : INITIAL_AUDIT_LOGS;
   });
 
+  // Authentication gate state
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    const saved = localStorage.getItem(STORAGE_PREFIX + 'is_authenticated');
+    return saved === 'true';
+  });
+
   // Current logged in account. Default to Ebenezer Addo to satisfy user requirement
   const [currentAccountId, setCurrentAccountId] = useState<string>(() => {
     const saved = localStorage.getItem(STORAGE_PREFIX + 'current_account_id');
@@ -226,6 +241,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const acc = accounts.find((a) => a.id === accountId);
     if (acc) {
       setCurrentAccountId(acc.id);
+      setIsLoggedIn(true);
+      localStorage.setItem(STORAGE_PREFIX + 'is_authenticated', 'true');
       // If active portal is not in allowed portals of new account, switch to default portal
       if (!acc.allowedPortals.includes(activePortal)) {
         setActivePortal(acc.defaultPortal);
@@ -233,6 +250,103 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const mem = members.find((m) => m.id === acc.memberId);
       showToast(`Logged in as ${mem?.name || acc.email}`);
     }
+  };
+
+  const logout = () => {
+    setIsLoggedIn(false);
+    localStorage.removeItem(STORAGE_PREFIX + 'is_authenticated');
+    showToast('You have been signed out.');
+  };
+
+  const checkEmailStatus = (email: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+    if (!acc) {
+      return { status: 'not_found' as const };
+    }
+    const mem = members.find((m) => m.id === acc.memberId);
+    const primaryRole = roles.find((r) => r.id === mem?.primaryRole);
+    if (!acc.hasSetPassword) {
+      return {
+        status: 'needs_password' as const,
+        memberName: mem?.name || acc.email,
+        primaryRoleName: primaryRole?.name,
+      };
+    }
+    return {
+      status: 'has_password' as const,
+      memberName: mem?.name || acc.email,
+      primaryRoleName: primaryRole?.name,
+    };
+  };
+
+  const registerNewMember = (data: RegisterMemberData): { success: boolean; message: string } => {
+    const cleanEmail = data.email.trim().toLowerCase();
+    
+    if (!data.name.trim()) {
+      return { success: false, message: 'Please provide your full name.' };
+    }
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, message: 'Please provide a valid email address.' };
+    }
+    if (!data.phone.trim()) {
+      return { success: false, message: 'Please provide your WhatsApp / phone number.' };
+    }
+    if (!data.password || data.password.length < 6) {
+      return { success: false, message: 'Password must be at least 6 characters long.' };
+    }
+
+    // Check if email already exists
+    if (accounts.some((a) => a.email.toLowerCase() === cleanEmail)) {
+      return { success: false, message: 'An account with this email already exists. Please log in.' };
+    }
+
+    const newMemberId = generateUniqueId('mem');
+    const newAccountId = generateUniqueId('acc');
+
+    const newMember: TeamMember = {
+      id: newMemberId,
+      name: data.name.trim(),
+      email: cleanEmail,
+      phone: data.phone.trim(),
+      gender: data.gender,
+      primaryRole: data.primaryRole,
+      secondaryRoles: data.secondaryRoles,
+      skillLevel: data.skillLevel,
+      rawSkillDescription: data.rawSkillDescription,
+      availability: data.availability,
+      status: 'active',
+      joinedDate: new Date().toISOString().split('T')[0],
+      notes: data.notes.trim() || undefined,
+    };
+
+    const newAccount: UserAccount = {
+      id: newAccountId,
+      email: cleanEmail,
+      memberId: newMemberId,
+      allowedPortals: ['team'], // New signups get Team Portal
+      defaultPortal: 'team',
+      password: data.password,
+      hasSetPassword: true,
+      passwordSetAt: new Date().toISOString(),
+    };
+
+    setMembers((prev) => [...prev, newMember]);
+    setAccounts((prev) => [...prev, newAccount]);
+    setCurrentAccountId(newAccountId);
+    setActivePortal('team');
+    setIsLoggedIn(true);
+    localStorage.setItem(STORAGE_PREFIX + 'is_authenticated', 'true');
+
+    logAction(
+      data.name,
+      'New Team Member Registration',
+      `Registered via MediaServe onboarding form as ${roles.find((r) => r.id === data.primaryRole)?.name || 'Media Member'}.`,
+      'system'
+    );
+
+    showToast(`Welcome to AKWC Media, ${data.name}! Your account is active.`);
+    return { success: true, message: `Account created successfully! Welcome to the team.` };
   };
 
   const switchPortal = (portal: PortalType) => {
@@ -273,6 +387,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     setCurrentAccountId(acc.id);
+    setIsLoggedIn(true);
+    localStorage.setItem(STORAGE_PREFIX + 'is_authenticated', 'true');
+
     if (!acc.allowedPortals.includes(activePortal)) {
       setActivePortal(acc.defaultPortal);
     }
@@ -318,6 +435,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setCurrentAccountId(acc.id);
+    setIsLoggedIn(true);
+    localStorage.setItem(STORAGE_PREFIX + 'is_authenticated', 'true');
+
     if (!acc.allowedPortals.includes(activePortal)) {
       setActivePortal(acc.defaultPortal);
     }
@@ -780,12 +900,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
+        isLoggedIn,
         currentAccount,
         currentMember,
         activePortal,
         availableAccounts: accounts,
         switchAccount,
         switchPortal,
+        logout,
+        checkEmailStatus,
+        registerNewMember,
         setupFirstTimePassword,
         loginWithPassword,
         changePassword,

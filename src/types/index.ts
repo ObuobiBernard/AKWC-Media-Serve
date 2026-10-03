@@ -45,6 +45,20 @@ export interface UserAccount {
   passwordSetAt?: string;
 }
 
+export interface RegisterMemberData {
+  name: string;
+  email: string;
+  phone: string;
+  gender: 'Male' | 'Female';
+  primaryRole: string;
+  secondaryRoles: string[];
+  skillLevel: SkillLevel;
+  rawSkillDescription: string;
+  availability: 'Flexible' | 'Both Sundays & Weekdays' | 'Sundays only';
+  notes: string;
+  password: string;
+}
+
 export interface RoleAssignment {
   id: string;
   programId: string;

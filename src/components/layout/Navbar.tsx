@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { PortalType } from '../../types';
 import { AccountSwitcherModal } from '../auth/AccountSwitcherModal';
 import { PWAInstallButton } from '../shared/PWAInstallButton';
-import { RotateCcw, User, Shield, Users, Radio, ChevronDown } from 'lucide-react';
+import { RotateCcw, User, Shield, Users, Radio, ChevronDown, LogOut } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const {
@@ -12,6 +12,7 @@ export const Navbar: React.FC = () => {
     activePortal,
     switchPortal,
     resetToDefaults,
+    logout,
   } = useApp();
 
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -85,6 +86,14 @@ export const Navbar: React.FC = () => {
               className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent hover:border-slate-800 rounded-lg transition-colors"
             >
               <RotateCcw className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={logout}
+              title="Sign out of MediaServe"
+              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-900 border border-transparent hover:border-rose-950 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
