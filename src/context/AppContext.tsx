@@ -23,10 +23,22 @@ import {
   INITIAL_REMINDER_CONFIG,
   INITIAL_AUDIT_LOGS,
 } from '../data/mockData';
+import { buildAssignmentWhatsAppMessage } from '../utils/whatsapp';
+
+export const SUPER_ADMIN_EMAIL = 'bernardoobuobi@gmail.com';
+
+export interface WhatsAppNotificationModalState {
+  member: TeamMember;
+  role: MediaRole;
+  program: ProgramService;
+  whatsappUrl: string;
+  messageText: string;
+}
 
 interface AppContextType {
   // Auth & Navigation
   isLoggedIn: boolean;
+  isSuperAdmin: boolean;
   currentAccount: UserAccount;
   currentMember: TeamMember;
   activePortal: PortalType;
@@ -34,6 +46,11 @@ interface AppContextType {
   switchAccount: (accountId: string) => void;
   switchPortal: (portal: PortalType) => void;
   logout: () => void;
+  updateAccountPrivileges: (
+    targetAccountId: string,
+    newAllowedPortals: PortalType[],
+    defaultPortal?: PortalType
+  ) => { success: boolean; message: string };
   checkEmailStatus: (email: string) => {
     status: 'not_found' | 'needs_password' | 'has_password';
     memberName?: string;
@@ -44,6 +61,11 @@ interface AppContextType {
   loginWithPassword: (email: string, password: string) => { success: boolean; message: string; requiresSetup?: boolean };
   changePassword: (newPassword: string) => { success: boolean; message: string };
   resetPasswordForMember: (email: string) => void;
+
+  // WhatsApp Automated Duty Dispatch
+  whatsAppModalState: WhatsAppNotificationModalState | null;
+  closeWhatsAppModal: () => void;
+  openWhatsAppModalForAssignment: (programId: string, roleId: string, memberId: string) => void;
 
   // Data Store
   roles: MediaRole[];
@@ -181,6 +203,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     return currentAccount.defaultPortal;
   });
+
+  const isSuperAdmin = currentAccount.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+
+  // WhatsApp Automated Duty Dispatch Modal state
+  const [whatsAppModalState, setWhatsAppModalState] = useState<WhatsAppNotificationModalState | null>(null);
+
+  const closeWhatsAppModal = () => {
+    setWhatsAppModalState(null);
+  };
+
+  const openWhatsAppModalForAssignment = (programId: string, roleId: string, memberId: string) => {
+    const member = members.find((m) => m.id === memberId);
+    const role = roles.find((r) => r.id === roleId);
+    const program = programs.find((p) => p.id === programId);
+    if (!member || !role || !program) return;
+
+    const { whatsappUrl, message } = buildAssignmentWhatsAppMessage({
+      memberName: member.name,
+      memberPhone: member.phone,
+      roleName: role.name,
+      station: role.station,
+      programTitle: program.title,
+      programDate: program.date,
+      callTime: program.callTime,
+      startTime: program.startTime,
+      endTime: program.endTime,
+    });
+
+    setWhatsAppModalState({
+      member,
+      role,
+      program,
+      whatsappUrl,
+      messageText: message,
+    });
+  };
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -350,11 +408,78 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const switchPortal = (portal: PortalType) => {
-    if (currentAccount.allowedPortals.includes(portal)) {
+    // SECURITY RULE: Only bernardoobuobi@gmail.com can access the admin portal
+    if (portal === 'admin' && !isSuperAdmin) {
+      showToast('Access Denied: Only the Super Admin (bernardoobuobi@gmail.com) can access the Admin Portal.');
+      return;
+    }
+
+    // Only accounts with leadership permission or super admin can access leadership portal
+    if (portal === 'leadership' && !isSuperAdmin && !currentAccount.allowedPortals.includes('leadership')) {
+      showToast('Access Denied: You do not have Leadership privileges.');
+      return;
+    }
+
+    if (currentAccount.allowedPortals.includes(portal) || isSuperAdmin) {
       setActivePortal(portal);
     } else {
       showToast(`Access restricted: Your account does not have permission for the ${portal} portal.`);
     }
+  };
+
+  const updateAccountPrivileges = (
+    targetAccountId: string,
+    newAllowedPortals: PortalType[],
+    defaultPortal?: PortalType
+  ): { success: boolean; message: string } => {
+    // SECURITY RULE: Only bernardoobuobi@gmail.com can assign admin or leader privileges
+    if (!isSuperAdmin) {
+      const msg = 'Security violation: Only the Super Admin (bernardoobuobi@gmail.com) is authorized to assign admin or leader privileges.';
+      showToast(msg);
+      return { success: false, message: msg };
+    }
+
+    const targetAcc = accounts.find((a) => a.id === targetAccountId);
+    if (!targetAcc) {
+      return { success: false, message: 'Account not found.' };
+    }
+
+    // No one other than bernardoobuobi@gmail.com can ever have admin portal privilege
+    const sanitizedPortals: PortalType[] = newAllowedPortals.filter((p) => {
+      if (p === 'admin') {
+        return targetAcc.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+      }
+      return true;
+    });
+
+    if (!sanitizedPortals.includes('team')) {
+      sanitizedPortals.push('team');
+    }
+
+    setAccounts((prev) =>
+      prev.map((a) => {
+        if (a.id === targetAccountId) {
+          const def = defaultPortal || (sanitizedPortals.includes(a.defaultPortal) ? a.defaultPortal : 'team');
+          return {
+            ...a,
+            allowedPortals: sanitizedPortals,
+            defaultPortal: def,
+          };
+        }
+        return a;
+      })
+    );
+
+    const mem = members.find((m) => m.id === targetAcc.memberId);
+    logAction(
+      currentMember.name,
+      'Updated Team Member Privileges',
+      `Super Admin updated portal permissions for ${mem?.name || targetAcc.email} to: [${sanitizedPortals.join(', ')}].`,
+      'system'
+    );
+
+    showToast(`Updated privileges for ${mem?.name || targetAcc.email}`);
+    return { success: true, message: 'Privileges updated successfully.' };
   };
 
   const setupFirstTimePassword = (email: string, newPassword: string) => {
@@ -595,6 +720,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'assignment'
     );
     showToast(`Assigned ${assignedMember?.name || 'crew'} to ${role?.name || 'station'}`);
+
+    // Automatically trigger WhatsApp notification to the assigned member for confirmation
+    if (memberId) {
+      openWhatsAppModalForAssignment(programId, roleId, memberId);
+    }
   };
 
   const autoFillRoster = (programId: string) => {
@@ -720,6 +850,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'replacement'
     );
     showToast(`Replacement assigned! ${newMember?.name} has been placed on duty.`);
+
+    // Automatically trigger WhatsApp notification to the replacement member
+    if (newMemberId && originalAsg) {
+      openWhatsAppModalForAssignment(originalAsg.programId, originalAsg.roleId, newMemberId);
+    }
   };
 
   const triggerManualReminder = (programId: string, intervalLabel: string = 'Manual Reminder') => {
@@ -901,6 +1036,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider
       value={{
         isLoggedIn,
+        isSuperAdmin,
         currentAccount,
         currentMember,
         activePortal,
@@ -908,12 +1044,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         switchAccount,
         switchPortal,
         logout,
+        updateAccountPrivileges,
         checkEmailStatus,
         registerNewMember,
         setupFirstTimePassword,
         loginWithPassword,
         changePassword,
         resetPasswordForMember,
+        whatsAppModalState,
+        closeWhatsAppModal,
+        openWhatsAppModalForAssignment,
         roles,
         members,
         programs,

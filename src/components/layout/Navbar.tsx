@@ -13,14 +13,21 @@ export const Navbar: React.FC = () => {
     switchPortal,
     resetToDefaults,
     logout,
+    isSuperAdmin,
   } = useApp();
 
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
 
+  const hasLeadership = currentAccount.allowedPortals.includes('leadership') || isSuperAdmin;
+
   const portals: { id: PortalType; label: string; icon: React.ReactNode }[] = [
     { id: 'team', label: 'Team Portal', icon: <User className="w-3.5 h-3.5" /> },
-    { id: 'leadership', label: 'Leadership Portal', icon: <Radio className="w-3.5 h-3.5" /> },
-    { id: 'admin', label: 'Admin Portal', icon: <Shield className="w-3.5 h-3.5" /> },
+    ...(hasLeadership
+      ? [{ id: 'leadership' as PortalType, label: 'Leadership Portal', icon: <Radio className="w-3.5 h-3.5" /> }]
+      : []),
+    ...(isSuperAdmin
+      ? [{ id: 'admin' as PortalType, label: 'Admin Portal', icon: <Shield className="w-3.5 h-3.5" /> }]
+      : []),
   ];
 
   return (

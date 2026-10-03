@@ -69,6 +69,8 @@ export interface RoleAssignment {
   declineReason?: string;
   replacementForMemberId?: string;
   remindersSent: string[]; // e.g. ['7d', '3d', '24h']
+  whatsappNotificationSent?: boolean;
+  whatsappNotificationAt?: string;
 }
 
 export interface ProgramService {

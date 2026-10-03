@@ -4,6 +4,8 @@ import { TeamMember, MediaRole, SkillLevel, Announcement } from '../../types';
 import {
   Users,
   Shield,
+  ShieldCheck,
+  Lock,
   FileSpreadsheet,
   Settings,
   Plus,
@@ -24,6 +26,8 @@ import {
 
 export const AdminPortal: React.FC = () => {
   const {
+    currentAccount,
+    isSuperAdmin,
     members,
     roles,
     programs,
@@ -32,6 +36,7 @@ export const AdminPortal: React.FC = () => {
     reminderConfig,
     auditLogs,
     availableAccounts,
+    updateAccountPrivileges,
     addMember,
     updateMember,
     deleteMember,
@@ -42,7 +47,22 @@ export const AdminPortal: React.FC = () => {
     showToast,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'members' | 'roles' | 'excel' | 'config' | 'announcements' | 'audit'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'roles' | 'privileges' | 'excel' | 'config' | 'announcements' | 'audit'>('members');
+
+  // Strict Security Guard: Only bernardoobuobi@gmail.com can access Admin Portal
+  if (!isSuperAdmin) {
+    return (
+      <div className="p-8 bg-slate-900 border border-slate-800 rounded-2xl text-center space-y-4 max-w-lg mx-auto my-12 animate-in fade-in duration-200">
+        <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto shadow-lg shadow-rose-950">
+          <Shield className="w-7 h-7" />
+        </div>
+        <h2 className="text-lg font-bold text-white">Access Restricted to Super Admin</h2>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Only the designated system administrator (<strong className="text-white font-mono">bernardoobuobi@gmail.com</strong>) has authorization to access the AKWC MediaServe Admin Console and manage team privileges.
+        </p>
+      </div>
+    );
+  }
 
   // Member Management State
   const [memberSearch, setMemberSearch] = useState('');
@@ -296,6 +316,7 @@ export const AdminPortal: React.FC = () => {
         {[
           { id: 'members', label: 'Team Members Directory', icon: <Users className="w-4 h-4" /> },
           { id: 'roles', label: 'Media Stations & Gear', icon: <Radio className="w-4 h-4" /> },
+          { id: 'privileges', label: 'User Roles & Privileges', icon: <KeyRound className="w-4 h-4" /> },
           { id: 'excel', label: 'Excel MVP / CSV Storage', icon: <FileSpreadsheet className="w-4 h-4" /> },
           { id: 'config', label: 'Reminders & WhatsApp Config', icon: <Settings className="w-4 h-4" /> },
           { id: 'announcements', label: 'Announcements Board', icon: <FileText className="w-4 h-4" /> },
@@ -494,6 +515,133 @@ export const AdminPortal: React.FC = () => {
               </div>
             </div>
           ))}
+        </section>
+      )}
+
+      {/* TAB: USER ROLES & PRIVILEGES */}
+      {activeTab === 'privileges' && (
+        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-amber-500/10 border border-amber-500/25 rounded-xl">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 mt-0.5">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>Administrative Authority Policy</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold uppercase">
+                    Enforced
+                  </span>
+                </h3>
+                <p className="text-xs text-amber-200/90 mt-1 leading-relaxed">
+                  Only the Super Admin (<strong className="text-white font-mono">bernardoobuobi@gmail.com</strong>) has authority to grant or revoke Leadership and Admin portal privileges. No other member can assign privileges.
+                </p>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-[11px] text-slate-400">Designated Super Admin:</div>
+              <div className="text-xs font-bold text-amber-300">Bernard Owusu Obuobi</div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-white">Team Member Portal Access Control</h4>
+                <p className="text-xs text-slate-400">
+                  Manage which team members have access to the Leadership Portal to assign rosters and send reminders.
+                </p>
+              </div>
+              <span className="text-xs text-slate-400">
+                {availableAccounts.length} Registered Accounts
+              </span>
+            </div>
+
+            <div className="border border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-800/80">
+              {availableAccounts.map((acc) => {
+                const mem = members.find((m) => m.id === acc.memberId);
+                const role = roles.find((r) => r.id === mem?.primaryRole);
+                const isBernard = acc.email.toLowerCase() === 'bernardoobuobi@gmail.com';
+                const hasLeadership = acc.allowedPortals.includes('leadership');
+
+                return (
+                  <div
+                    key={acc.id}
+                    className="p-4 bg-slate-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-900/60 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-xs flex items-center justify-center shrink-0">
+                        {mem?.name ? mem.name.charAt(0) : acc.email.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-white">{mem?.name || 'Unnamed Member'}</span>
+                          {isBernard && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold">
+                              Super Admin
+                            </span>
+                          )}
+                          {!isBernard && hasLeadership && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 font-semibold">
+                              Leader
+                            </span>
+                          )}
+                          {!isBernard && !hasLeadership && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-medium">
+                              Member
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                          <span className="font-mono text-slate-300">{acc.email}</span>
+                          <span>·</span>
+                          <span className="text-amber-400/90">{role?.name || 'Media Member'}</span>
+                          <span>·</span>
+                          <span className="text-slate-500">{mem?.phone}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      {isBernard ? (
+                        <span className="text-xs text-amber-400 font-semibold px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Sole System Admin (Permanent)</span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (hasLeadership) {
+                              updateAccountPrivileges(acc.id, ['team']);
+                            } else {
+                              updateAccountPrivileges(acc.id, ['leadership', 'team'], 'leadership');
+                            }
+                          }}
+                          className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all flex items-center gap-1.5 ${
+                            hasLeadership
+                              ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/30'
+                              : 'bg-blue-600 hover:bg-blue-500 text-white border-transparent shadow-xs'
+                          }`}
+                        >
+                          {hasLeadership ? (
+                            <>
+                              <span>Revoke Leadership</span>
+                            </>
+                          ) : (
+                            <>
+                              <Shield className="w-3.5 h-3.5" />
+                              <span>Promote to Leader</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </section>
       )}
 
