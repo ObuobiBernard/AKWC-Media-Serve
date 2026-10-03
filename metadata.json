@@ -1,0 +1,6 @@
+{
+  "name": "MediaServe - AKWC Media Team Management",
+  "description": "Production media scheduling, role assignment, multi-stage reminders, and attendance confirmation system for COP Akweteyman Worship Center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
