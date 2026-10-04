@@ -162,6 +162,33 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
+    // Client-side instant check for duplicate email or phone number
+    const cleanEmail = regData.email.trim().toLowerCase();
+    const normalizeDigits = (p: string) => {
+      const digits = p.replace(/\D/g, '');
+      if (digits.startsWith('0') && digits.length === 10) {
+        return '233' + digits.substring(1);
+      }
+      return digits;
+    };
+
+    const emailTaken =
+      availableAccounts.some((a) => a.email.toLowerCase() === cleanEmail) ||
+      members.some((m) => m.email.toLowerCase() === cleanEmail);
+    if (emailTaken) {
+      setRegError('An account or team profile with this email address already exists. Please sign in or use password recovery.');
+      return;
+    }
+
+    const candPhoneNorm = normalizeDigits(regData.phone);
+    if (candPhoneNorm.length >= 7) {
+      const phoneTaken = members.some((m) => normalizeDigits(m.phone) === candPhoneNorm);
+      if (phoneTaken) {
+        setRegError('An account with this phone/WhatsApp number is already registered in the AKWC Media roster. Please sign in or use a different phone number.');
+        return;
+      }
+    }
+
     const res = registerNewMember(regData);
     if (!res.success) {
       setRegError(res.message);
@@ -423,6 +450,24 @@ export const LoginPage: React.FC = () => {
                             {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                           </button>
                         </div>
+
+                        {email.trim().toLowerCase() === 'bernardoobuobi@gmail.com' && (
+                          <div className="mt-2.5 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-300 flex items-center justify-between gap-2">
+                            <div>
+                              <div className="font-semibold text-white text-[11px]">Super Administrator Account</div>
+                              <div className="text-[11px] text-amber-200/90">
+                                Password: <code className="bg-slate-900 px-1.5 py-0.5 rounded font-mono text-white select-all">MediaServe2026!</code>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setPassword('MediaServe2026!')}
+                              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] rounded-lg transition-colors shrink-0"
+                            >
+                              Fill Password
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <button
@@ -732,9 +777,41 @@ export const LoginPage: React.FC = () => {
           </button>
 
           {showDemoSelector && (
-            <div className="mt-3 p-3 bg-slate-900/90 border border-slate-800 rounded-xl text-left space-y-2 animate-in fade-in duration-150">
-              <div className="text-[11px] text-slate-400 font-medium">
-                Tap any member below to instantly log in as them:
+            <div className="mt-3 p-3 bg-slate-900/90 border border-slate-800 rounded-xl text-left space-y-2.5 animate-in fade-in duration-150">
+              {/* Highlight Super Admin Account */}
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center justify-center font-bold text-xs shrink-0">
+                    BO
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-white">Bernard Owusu Obuobi</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold">
+                        Super Admin
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      bernardoobuobi@gmail.com · Password: <code className="text-amber-300 font-mono font-bold">MediaServe2026!</code>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const bernardAcc = availableAccounts.find(
+                      (a) => a.email.toLowerCase() === 'bernardoobuobi@gmail.com'
+                    );
+                    if (bernardAcc) switchAccount(bernardAcc.id);
+                  }}
+                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-colors shrink-0 shadow-xs"
+                >
+                  Log in as Admin
+                </button>
+              </div>
+
+              <div className="text-[11px] text-slate-400 font-medium pt-1">
+                Other team members (instant login):
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 {availableAccounts.slice(0, 6).map((acc) => {

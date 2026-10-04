@@ -354,9 +354,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Password must be at least 6 characters long.' };
     }
 
-    // Check if email already exists
-    if (accounts.some((a) => a.email.toLowerCase() === cleanEmail)) {
-      return { success: false, message: 'An account with this email already exists. Please log in.' };
+    // Check if email already exists in accounts or member directory
+    const emailExists =
+      accounts.some((a) => a.email.toLowerCase() === cleanEmail) ||
+      members.some((m) => m.email.toLowerCase() === cleanEmail);
+    if (emailExists) {
+      return {
+        success: false,
+        message: 'An account or team profile with this email address already exists. Please sign in or use password recovery.',
+      };
+    }
+
+    // Check if phone number already exists
+    const normalizeDigits = (p: string) => {
+      const digits = p.replace(/\D/g, '');
+      if (digits.startsWith('0') && digits.length === 10) {
+        return '233' + digits.substring(1);
+      }
+      return digits;
+    };
+
+    const candPhoneNorm = normalizeDigits(data.phone);
+    if (candPhoneNorm.length >= 7) {
+      const phoneExists = members.some((m) => normalizeDigits(m.phone) === candPhoneNorm);
+      if (phoneExists) {
+        return {
+          success: false,
+          message: 'An account with this phone/WhatsApp number is already registered in the AKWC Media roster. Please sign in with your email or use a different phone number.',
+        };
+      }
     }
 
     const newMemberId = generateUniqueId('mem');
@@ -938,6 +964,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Members Management
   const addMember = (newMem: Omit<TeamMember, 'id'>) => {
+    const cleanEmail = newMem.email.trim().toLowerCase();
+    const normalizeDigits = (p: string) => {
+      const digits = p.replace(/\D/g, '');
+      if (digits.startsWith('0') && digits.length === 10) {
+        return '233' + digits.substring(1);
+      }
+      return digits;
+    };
+
+    const emailExists =
+      accounts.some((a) => a.email.toLowerCase() === cleanEmail) ||
+      members.some((m) => m.email.toLowerCase() === cleanEmail);
+    if (emailExists) {
+      showToast(`Cannot add: A member with email "${newMem.email}" already exists in the roster.`);
+      return '';
+    }
+
+    const candPhoneNorm = normalizeDigits(newMem.phone);
+    if (candPhoneNorm.length >= 7) {
+      const phoneExists = members.some((m) => normalizeDigits(m.phone) === candPhoneNorm);
+      if (phoneExists) {
+        showToast(`Cannot add: A member with phone number "${newMem.phone}" already exists in the roster.`);
+        return '';
+      }
+    }
+
     const id = generateUniqueId('mem');
     const created: TeamMember = {
       ...newMem,
