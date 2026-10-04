@@ -194,11 +194,14 @@ export const AdminPortal: React.FC = () => {
   };
 
   const handleExportScheduleCsv = () => {
-    const headers = ['Program ID', 'Program Title', 'Date', 'Call Time', 'Role', 'Station', 'Assigned Member', 'Status', 'Confirmed At'];
+    const headers = ['Program ID', 'Program Title', 'Date', 'Call Time', 'Role', 'Station', 'Assigned Member', 'Status', 'Arrival Note / ETA', 'Confirmed At'];
     const rows = assignments.map((asg) => {
       const prog = programs.find((p) => p.id === asg.programId);
       const role = roles.find((r) => r.id === asg.roleId);
       const mem = members.find((m) => m.id === asg.memberId);
+      const arrivalNote = asg.arrivalComment
+        ? `"${asg.estimatedArrivalTime ? `[ETA: ${asg.estimatedArrivalTime}] ` : ''}${asg.arrivalComment}"`
+        : '';
       return [
         asg.programId,
         `"${prog?.title || ''}"`,
@@ -208,6 +211,7 @@ export const AdminPortal: React.FC = () => {
         `"${role?.station || ''}"`,
         `"${mem?.name || 'Unassigned'}"`,
         asg.status,
+        arrivalNote,
         asg.confirmedAt || '',
       ].join(',');
     });

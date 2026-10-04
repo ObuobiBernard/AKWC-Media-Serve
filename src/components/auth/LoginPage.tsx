@@ -19,6 +19,8 @@ import {
   ChevronDown,
   UserPlus,
   LogIn,
+  Clock,
+  X,
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
@@ -31,6 +33,8 @@ export const LoginPage: React.FC = () => {
     loginWithPassword,
     registerNewMember,
     switchAccount,
+    inactivityLoggedOut,
+    clearInactivityFlag,
   } = useApp();
 
   const [mode, setMode] = useState<'signin' | 'register'>('signin');
@@ -242,6 +246,25 @@ export const LoginPage: React.FC = () => {
             Production Scheduling, Duty Rosters & Attendance Management
           </p>
         </div>
+
+        {inactivityLoggedOut && (
+          <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start justify-between gap-3 text-xs text-amber-300 animate-in fade-in duration-200">
+            <div className="flex items-start gap-2.5">
+              <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-white block font-semibold">Session Closed Due to Inactivity</strong>
+                <span>You were automatically signed out to protect church roster data and administrative privileges. Please log in again.</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={clearInactivityFlag}
+              className="text-slate-400 hover:text-white p-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Tab Switcher */}
         <div className="bg-slate-900/90 border border-slate-800 p-1 rounded-xl flex gap-1 mb-6 shadow-sm">

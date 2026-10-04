@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CalendarSyncModal } from '../shared/CalendarSyncModal';
 import { AccountSwitcherModal } from '../auth/AccountSwitcherModal';
+import { LateConfirmationModal } from '../shared/LateConfirmationModal';
 import {
   Calendar,
   Clock,
@@ -70,6 +71,19 @@ export const TeamPortal: React.FC = () => {
   const [targetDeclineAsgId, setTargetDeclineAsgId] = useState<string>('');
   const [declineReason, setDeclineReason] = useState('Work schedule conflict');
   const [declineCustomNote, setDeclineCustomNote] = useState('');
+
+  // Late arrival confirmation modal state
+  const [lateModalOpen, setLateModalOpen] = useState(false);
+  const [lateModalData, setLateModalData] = useState<{
+    asgId: string;
+    prog: ProgramService;
+    role: MediaRole;
+  } | null>(null);
+
+  const handleOpenLateConfirm = (asgId: string, prog: ProgramService, role: MediaRole) => {
+    setLateModalData({ asgId, prog, role });
+    setLateModalOpen(true);
+  };
 
   // Blackout dates state
   const [blackoutInput, setBlackoutInput] = useState('');
@@ -279,14 +293,24 @@ export const TeamPortal: React.FC = () => {
                   </div>
 
                   {nextDuty.asg.status === 'confirmed' ? (
-                    <div className="p-3 bg-emerald-950/40 border border-emerald-900/60 rounded-lg flex items-center gap-2.5 text-emerald-300 text-xs">
-                      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                      <div>
-                        <div className="font-semibold">Attendance Confirmed</div>
-                        <div className="text-[10px] text-emerald-400/80">
-                          Checked in for duty. See you at {nextDuty.prog.callTime}!
-                        </div>
+                    <div className="p-3 bg-emerald-950/40 border border-emerald-900/60 rounded-xl space-y-1.5 text-xs">
+                      <div className="flex items-center gap-2 text-emerald-300 font-semibold">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>Attendance Confirmed</span>
                       </div>
+                      {nextDuty.asg.arrivalComment ? (
+                        <div className="mt-1 p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-200">
+                          <div className="font-semibold text-amber-400 flex items-center gap-1.5">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>Arrival Note {nextDuty.asg.estimatedArrivalTime ? `(ETA: ${nextDuty.asg.estimatedArrivalTime})` : ''}</span>
+                          </div>
+                          <p className="mt-0.5 italic text-slate-300">&ldquo;{nextDuty.asg.arrivalComment}&rdquo;</p>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-emerald-400/80">
+                          On-time check-in recorded for {nextDuty.prog.callTime}.
+                        </div>
+                      )}
                     </div>
                   ) : nextDuty.asg.status === 'declined' ? (
                     <div className="p-3 bg-rose-950/40 border border-rose-900/60 rounded-lg flex items-center gap-2.5 text-rose-300 text-xs">
@@ -313,13 +337,31 @@ export const TeamPortal: React.FC = () => {
 
                 {/* Confirm / Decline Action Buttons */}
                 <div className="space-y-2 pt-2">
-                  {nextDuty.asg.status !== 'confirmed' && (
+                  {nextDuty.asg.status !== 'confirmed' ? (
+                    <>
+                      <button
+                        onClick={() => confirmAttendance(nextDuty.asg.id)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-emerald-950/50 transition-all hover:scale-[1.01]"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>I&apos;m Coming (On Time)</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleOpenLateConfirm(nextDuty.asg.id, nextDuty.prog, nextDuty.role)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium text-xs rounded-xl transition-all"
+                      >
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Can&apos;t make exact call time? (Add Note)</span>
+                      </button>
+                    </>
+                  ) : (
                     <button
-                      onClick={() => confirmAttendance(nextDuty.asg.id)}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-emerald-950/50 transition-all hover:scale-[1.01]"
+                      onClick={() => handleOpenLateConfirm(nextDuty.asg.id, nextDuty.prog, nextDuty.role)}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-amber-300 text-xs rounded-xl transition-colors"
                     >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>I&apos;m Coming (Confirm Attendance)</span>
+                      <Clock className="w-3 h-3" />
+                      <span>{nextDuty.asg.arrivalComment ? 'Update Arrival Note' : 'Add Late Arrival Note'}</span>
                     </button>
                   )}
 
@@ -392,9 +434,21 @@ export const TeamPortal: React.FC = () => {
 
                 <div className="flex items-center gap-2 shrink-0">
                   {asg.status === 'confirmed' ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-medium rounded-lg">
-                      <Check className="w-3.5 h-3.5" /> Confirmed
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-medium rounded-lg">
+                        <Check className="w-3.5 h-3.5" /> Confirmed
+                      </span>
+                      {asg.arrivalComment && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenLateConfirm(asg.id, prog, role)}
+                          className="text-[10px] text-amber-300 font-medium bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                          title={`Click to edit note: "${asg.arrivalComment}"`}
+                        >
+                          ETA: {asg.estimatedArrivalTime || 'Delayed'} (Note)
+                        </button>
+                      )}
+                    </div>
                   ) : asg.status === 'declined' ? (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs font-medium rounded-lg">
                       <XCircle className="w-3.5 h-3.5" /> Declined
@@ -403,9 +457,17 @@ export const TeamPortal: React.FC = () => {
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => confirmAttendance(asg.id)}
-                        className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-colors"
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-colors"
                       >
-                        Confirm
+                        On Time
+                      </button>
+                      <button
+                        onClick={() => handleOpenLateConfirm(asg.id, prog, role)}
+                        className="px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-medium rounded-lg transition-colors flex items-center gap-1"
+                        title="Can't make exact call time? Confirm with note / ETA"
+                      >
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        <span>+ Note</span>
                       </button>
                       <button
                         onClick={() => handleOpenDecline(asg.id)}
@@ -661,6 +723,20 @@ export const TeamPortal: React.FC = () => {
           program={selectedCalendarDuty.prog}
           role={selectedCalendarDuty.role}
           assignment={selectedCalendarDuty.asg}
+        />
+      )}
+
+      {/* Late Arrival Confirmation Modal */}
+      {lateModalData && (
+        <LateConfirmationModal
+          isOpen={lateModalOpen}
+          onClose={() => {
+            setLateModalOpen(false);
+            setLateModalData(null);
+          }}
+          assignmentId={lateModalData.asgId}
+          program={lateModalData.prog}
+          role={lateModalData.role}
         />
       )}
 

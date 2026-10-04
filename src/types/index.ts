@@ -71,6 +71,8 @@ export interface RoleAssignment {
   remindersSent: string[]; // e.g. ['7d', '3d', '24h']
   whatsappNotificationSent?: boolean;
   whatsappNotificationAt?: string;
+  arrivalComment?: string; // Note/comment if member cannot arrive on time
+  estimatedArrivalTime?: string; // e.g. '8:30 AM'
 }
 
 export interface ProgramService {

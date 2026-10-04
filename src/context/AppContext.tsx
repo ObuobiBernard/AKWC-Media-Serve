@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   TeamMember,
   MediaRole,
@@ -78,13 +78,22 @@ interface AppContextType {
   auditLogs: AuditLog[];
 
   // Attendance & Workflow Actions
-  confirmAttendance: (assignmentId: string) => void;
+  confirmAttendance: (assignmentId: string, arrivalComment?: string, estimatedArrivalTime?: string) => void;
   declineAttendance: (assignmentId: string, reason: string) => void;
   assignMemberToRole: (programId: string, roleId: string, memberId: string) => void;
   autoFillRoster: (programId: string) => void;
   removeAssignment: (assignmentId: string) => void;
   replaceAssignment: (assignmentId: string, newMemberId: string) => void;
   triggerManualReminder: (programId: string, intervalLabel?: string) => void;
+
+  // Session Security & Inactivity Timeout
+  inactivityLoggedOut: boolean;
+  clearInactivityFlag: () => void;
+  inactivityTimeoutMinutes: number;
+  setInactivityTimeoutMinutes: (mins: number) => void;
+  resetInactivityTimer: () => void;
+  showInactivityWarning: boolean;
+  inactivitySecondsRemaining: number;
 
   // Programs & Management
   createProgram: (newProg: Omit<ProgramService, 'id'>) => string;
@@ -248,6 +257,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setToastMessage((prev) => (prev === msg ? null : prev));
     }, 4000);
   };
+
+  // Inactivity timeout configuration (Default: 15 minutes)
+  const [inactivityTimeoutMinutes, setInactivityTimeoutMinutes] = useState<number>(() => {
+    const saved = localStorage.getItem(STORAGE_PREFIX + 'inactivity_timeout_mins');
+    return saved ? parseInt(saved, 10) : 15;
+  });
+
+  const [inactivityLoggedOut, setInactivityLoggedOut] = useState<boolean>(() => {
+    return sessionStorage.getItem(STORAGE_PREFIX + 'inactivity_logout') === 'true';
+  });
+  const [showInactivityWarning, setShowInactivityWarning] = useState<boolean>(false);
+  const [inactivitySecondsRemaining, setInactivitySecondsRemaining] = useState<number>(60);
+  const lastActivityRef = useRef<number>(Date.now());
+
+  const clearInactivityFlag = () => {
+    setInactivityLoggedOut(false);
+    sessionStorage.removeItem(STORAGE_PREFIX + 'inactivity_logout');
+  };
+
+  const resetInactivityTimer = () => {
+    lastActivityRef.current = Date.now();
+    setShowInactivityWarning(false);
+    setInactivitySecondsRemaining(60);
+  };
+
+  // User activity tracker: auto-logout after inactivityTimeoutMinutes of idle time
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    lastActivityRef.current = Date.now();
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+
+    const handleUserActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    events.forEach((ev) => window.addEventListener(ev, handleUserActivity, { passive: true }));
+
+    const totalTimeoutMs = inactivityTimeoutMinutes * 60 * 1000;
+    const warningThresholdMs = Math.max(30000, totalTimeoutMs - 60 * 1000); // 60s before timeout
+
+    const intervalId = setInterval(() => {
+      const elapsed = Date.now() - lastActivityRef.current;
+
+      if (elapsed >= totalTimeoutMs) {
+        setIsLoggedIn(false);
+        localStorage.removeItem(STORAGE_PREFIX + 'is_authenticated');
+        sessionStorage.setItem(STORAGE_PREFIX + 'inactivity_logout', 'true');
+        setInactivityLoggedOut(true);
+        setShowInactivityWarning(false);
+        showToast('Session Expired: You were automatically signed out due to inactivity.');
+      } else if (elapsed >= warningThresholdMs) {
+        setShowInactivityWarning(true);
+        const remaining = Math.max(1, Math.ceil((totalTimeoutMs - elapsed) / 1000));
+        setInactivitySecondsRemaining(remaining);
+      } else {
+        setShowInactivityWarning(false);
+      }
+    }, 1000);
+
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, handleUserActivity));
+      clearInterval(intervalId);
+    };
+  }, [isLoggedIn, inactivityTimeoutMinutes]);
 
   // Sync to localStorage
   useEffect(() => {
@@ -653,7 +727,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Workflow Handlers
-  const confirmAttendance = (assignmentId: string) => {
+  const confirmAttendance = (assignmentId: string, arrivalComment?: string, estimatedArrivalTime?: string) => {
     setAssignments((prev) =>
       prev.map((asg) => {
         if (asg.id === assignmentId) {
@@ -661,6 +735,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ...asg,
             status: 'confirmed',
             confirmedAt: new Date().toISOString(),
+            arrivalComment: arrivalComment?.trim() || undefined,
+            estimatedArrivalTime: estimatedArrivalTime?.trim() || undefined,
             declineReason: undefined,
           };
         }
@@ -670,13 +746,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const asg = assignments.find((a) => a.id === assignmentId);
     const prog = programs.find((p) => p.id === asg?.programId);
+    const role = roles.find((r) => r.id === asg?.roleId);
+
+    const hasLateNote = Boolean(arrivalComment?.trim() || estimatedArrivalTime?.trim());
+    const detailMsg = hasLateNote
+      ? `Confirmed attendance for ${prog?.title || 'service'} (${role?.name || 'station'}). Arrival Note: ${estimatedArrivalTime ? `ETA: ${estimatedArrivalTime}. ` : ''}"${arrivalComment || 'Delayed'}"`
+      : `Confirmed on-time attendance for ${prog?.title || 'service'} (${role?.name || 'station'}).`;
+
     logAction(
       currentMember.name,
-      'Confirmed Attendance',
-      `Confirmed attendance for ${prog?.title || 'service'}.`,
+      hasLateNote ? 'Confirmed (Delayed Arrival)' : 'Confirmed Attendance',
+      detailMsg,
       'confirmation'
     );
-    showToast(`Attendance confirmed! Thank you for serving, ${currentMember.name}.`);
+
+    if (hasLateNote) {
+      showToast(`Attendance confirmed with arrival note! Leadership has been notified of your ETA (${estimatedArrivalTime || 'delayed'}).`);
+    } else {
+      showToast(`Attendance confirmed on time! Thank you for serving, ${currentMember.name}.`);
+    }
   };
 
   const declineAttendance = (assignmentId: string, reason: string) => {
@@ -1096,6 +1184,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         switchAccount,
         switchPortal,
         logout,
+        inactivityLoggedOut,
+        clearInactivityFlag,
+        inactivityTimeoutMinutes,
+        setInactivityTimeoutMinutes,
+        resetInactivityTimer,
+        showInactivityWarning,
+        inactivitySecondsRemaining,
         updateAccountPrivileges,
         checkEmailStatus,
         registerNewMember,

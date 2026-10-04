@@ -389,9 +389,22 @@ export const LeadershipPortal: React.FC = () => {
                       {/* Status */}
                       <td className="py-3.5 px-4">
                         {isConfirmed && (
-                          <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
-                            <CheckCircle2 className="w-4 h-4" /> Confirmed
-                          </span>
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
+                              <CheckCircle2 className="w-4 h-4" /> Confirmed
+                            </span>
+                            {asg?.arrivalComment && (
+                              <div className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 rounded-lg space-y-0.5 max-w-xs">
+                                <div className="flex items-center gap-1 text-[10px] text-amber-400 font-semibold uppercase tracking-wider">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Delayed Arrival {asg.estimatedArrivalTime ? `· ETA: ${asg.estimatedArrivalTime}` : ''}</span>
+                                </div>
+                                <div className="italic text-slate-300">
+                                  &ldquo;{asg.arrivalComment}&rdquo;
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         )}
                         {isPending && (
                           <span className="inline-flex items-center gap-1.5 text-amber-400 font-medium">

@@ -12,6 +12,7 @@ import { LeadershipPortal } from './components/portals/LeadershipPortal';
 import { AdminPortal } from './components/portals/AdminPortal';
 import { ToastNotification } from './components/shared/ToastNotification';
 import { WhatsAppNotificationModal } from './components/shared/WhatsAppNotificationModal';
+import { InactivityWarningModal } from './components/shared/InactivityWarningModal';
 
 const MainContent: React.FC = () => {
   const { activePortal } = useApp();
@@ -52,6 +53,7 @@ const AppShell: React.FC = () => {
         </div>
       </footer>
       <WhatsAppNotificationModal />
+      <InactivityWarningModal />
       <ToastNotification />
     </div>
   );
