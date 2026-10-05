@@ -19,6 +19,7 @@ import {
   MessageSquare,
   Sparkles,
   Users,
+  RotateCcw,
 } from 'lucide-react';
 
 export const LeadershipPortal: React.FC = () => {
@@ -34,6 +35,9 @@ export const LeadershipPortal: React.FC = () => {
     autoFillRoster,
     removeAssignment,
     triggerManualReminder,
+    pending24HourDuties,
+    setAutomatedReminderModalOpen,
+    trigger24HourScan,
     showToast,
   } = useApp();
 
@@ -119,6 +123,49 @@ export const LeadershipPortal: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
+      {/* Automated 24-Hour Reminder Alert Banner */}
+      {pending24HourDuties.length > 0 && (
+        <section className="p-4 sm:p-5 bg-amber-500/15 border border-amber-500/40 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg shadow-amber-950/20 animate-in fade-in duration-150">
+          <div className="flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 mt-0.5 shrink-0 border border-amber-500/30">
+              <Clock className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-white">
+                  Automated 24-Hour Reminder Task Alert
+                </h2>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 uppercase tracking-wide">
+                  {pending24HourDuties.length} Pending Confirmation
+                </span>
+              </div>
+              <p className="text-xs text-amber-200/90 mt-1 leading-relaxed">
+                {pending24HourDuties.length} assigned crew member{pending24HourDuties.length > 1 ? 's have' : ' has'} not confirmed attendance for services within the next 24 hours. Automated WhatsApp links with direct portal confirmation (`?action=confirm`) are ready to dispatch.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setAutomatedReminderModalOpen(true)}
+              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Review & Dispatch 24h Reminders</span>
+            </button>
+            <button
+              type="button"
+              onClick={trigger24HourScan}
+              title="Refresh 24-hour scan"
+              className="p-2.5 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-slate-800 hover:border-amber-500/40 rounded-xl text-xs transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* Workflow Navigation Banner */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-7 space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

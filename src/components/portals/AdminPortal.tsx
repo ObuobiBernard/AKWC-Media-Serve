@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { TeamMember, MediaRole, SkillLevel, Announcement } from '../../types';
+import { INITIAL_REMINDER_CONFIG } from '../../data/mockData';
 import {
   Users,
   Shield,
@@ -22,6 +23,7 @@ import {
   Save,
   KeyRound,
   RotateCcw,
+  Send,
 } from 'lucide-react';
 
 export const AdminPortal: React.FC = () => {
@@ -44,6 +46,9 @@ export const AdminPortal: React.FC = () => {
     deleteAnnouncement,
     updateReminderConfig,
     resetPasswordForMember,
+    pending24HourDuties,
+    setAutomatedReminderModalOpen,
+    trigger24HourScan,
     showToast,
   } = useApp();
 
@@ -230,10 +235,18 @@ export const AdminPortal: React.FC = () => {
   };
 
   const handleSaveReminderConfig = () => {
+    let cleanedDraft = templateDraft
+      .replace(/https?:\/\/[^\s]*github\.io[^\s]*/gi, '{appLink}')
+      .replace(/https?:\/\/[^\s]*obuobibernard[^\s]*/gi, '{appLink}');
+    if (!cleanedDraft.includes('{appLink}')) {
+      cleanedDraft += '\n\nPlease confirm your attendance on MediaServe:\n{appLink}';
+    }
+    setTemplateDraft(cleanedDraft);
     updateReminderConfig({
       ...reminderConfig,
-      whatsappTemplate: templateDraft,
+      whatsappTemplate: cleanedDraft,
     });
+    showToast('Reminder template saved with working {appLink}!');
   };
 
   const handleCreateAnnouncement = (e: React.FormEvent) => {
@@ -253,6 +266,49 @@ export const AdminPortal: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
+      {/* 24-Hour Automated Reminder Alert Banner */}
+      {pending24HourDuties.length > 0 && (
+        <section className="p-4 sm:p-5 bg-amber-500/15 border border-amber-500/40 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg shadow-amber-950/20 animate-in fade-in duration-150">
+          <div className="flex items-start gap-3.5">
+            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 mt-0.5 shrink-0 border border-amber-500/30">
+              <Clock className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-white">
+                  Automated 24-Hour Reminder Task Alert
+                </h2>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 uppercase tracking-wide">
+                  {pending24HourDuties.length} Pending Confirmation
+                </span>
+              </div>
+              <p className="text-xs text-amber-200/90 mt-1 leading-relaxed">
+                {pending24HourDuties.length} assigned team member{pending24HourDuties.length > 1 ? 's have' : ' has'} not confirmed attendance for services occurring within the next 24 hours. Automated WhatsApp links with direct portal confirmation (`?action=confirm`) are generated.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setAutomatedReminderModalOpen(true)}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Dispatch 24h WhatsApp Reminders</span>
+            </button>
+            <button
+              type="button"
+              onClick={trigger24HourScan}
+              title="Refresh 24-hour scan"
+              className="p-2 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-slate-800 hover:border-amber-500/40 rounded-xl text-xs transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* Top Overview & Metrics */}
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -740,13 +796,30 @@ export const AdminPortal: React.FC = () => {
                 onChange={(e) => setTemplateDraft(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-slate-200 focus:outline-none focus:border-amber-500/50"
               />
-              <button
-                onClick={handleSaveReminderConfig}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-colors"
-              >
-                <Save className="w-4 h-4" />
-                <span>Save Reminder Template</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleSaveReminderConfig}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save Reminder Template</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaultTmpl = INITIAL_REMINDER_CONFIG.whatsappTemplate;
+                    setTemplateDraft(defaultTmpl);
+                    updateReminderConfig({
+                      ...reminderConfig,
+                      whatsappTemplate: defaultTmpl,
+                    });
+                    showToast('Template reset to pristine default with working {appLink}!');
+                  }}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition-colors cursor-pointer"
+                >
+                  Reset to Verified Default
+                </button>
+              </div>
             </div>
           </div>
         </section>

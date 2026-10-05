@@ -126,3 +126,12 @@ export interface AuditLog {
   details: string;
   type: 'assignment' | 'confirmation' | 'decline' | 'replacement' | 'reminder' | 'system';
 }
+
+export interface Pending24HourDuty {
+  assignment: RoleAssignment;
+  program: ProgramService;
+  role: MediaRole;
+  member: TeamMember;
+  hoursRemaining: number;
+}
+

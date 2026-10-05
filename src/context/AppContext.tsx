@@ -11,6 +11,7 @@ import {
   AuditLog,
   PortalType,
   RegisterMemberData,
+  Pending24HourDuty,
 } from '../types';
 import {
   INITIAL_ROLES,
@@ -94,6 +95,14 @@ interface AppContextType {
   resetInactivityTimer: () => void;
   showInactivityWarning: boolean;
   inactivitySecondsRemaining: number;
+
+  // Automated 24-Hour Reminder Task & Direct Link Redirection
+  pending24HourDuties: Pending24HourDuty[];
+  automatedReminderModalOpen: boolean;
+  setAutomatedReminderModalOpen: (open: boolean) => void;
+  trigger24HourScan: () => void;
+  directConfirmData: { asg: RoleAssignment; prog: ProgramService; role: MediaRole; member: TeamMember } | null;
+  closeDirectConfirmModal: () => void;
 
   // Programs & Management
   createProgram: (newProg: Omit<ProgramService, 'id'>) => string;
@@ -179,7 +188,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [reminderConfig, setReminderConfig] = useState<ReminderConfig>(() => {
     const saved = localStorage.getItem(STORAGE_PREFIX + 'reminder_config');
-    return saved ? JSON.parse(saved) : INITIAL_REMINDER_CONFIG;
+    let config: ReminderConfig = saved ? JSON.parse(saved) : INITIAL_REMINDER_CONFIG;
+
+    // Self-healing: if stored template has stale or broken links like obuobibernard.github.io, sanitize with {appLink}
+    if (
+      config.whatsappTemplate &&
+      (config.whatsappTemplate.includes('github.io') ||
+        config.whatsappTemplate.includes('obuobibernard') ||
+        !config.whatsappTemplate.includes('{appLink}'))
+    ) {
+      config.whatsappTemplate = config.whatsappTemplate
+        .replace(/https?:\/\/[^\s]*github\.io[^\s]*/gi, '{appLink}')
+        .replace(/https?:\/\/[^\s]*obuobibernard[^\s]*/gi, '{appLink}');
+      if (!config.whatsappTemplate.includes('{appLink}')) {
+        config.whatsappTemplate = INITIAL_REMINDER_CONFIG.whatsappTemplate;
+      }
+      localStorage.setItem(STORAGE_PREFIX + 'reminder_config', JSON.stringify(config));
+    }
+    return config;
   });
 
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
@@ -228,6 +254,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const program = programs.find((p) => p.id === programId);
     if (!member || !role || !program) return;
 
+    const targetAsg = assignments.find(
+      (a) => a.programId === programId && a.roleId === roleId && a.memberId === memberId
+    );
+
     const { whatsappUrl, message } = buildAssignmentWhatsAppMessage({
       memberName: member.name,
       memberPhone: member.phone,
@@ -238,6 +268,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       callTime: program.callTime,
       startTime: program.startTime,
       endTime: program.endTime,
+      assignmentId: targetAsg?.id,
+      memberId: member.id,
     });
 
     setWhatsAppModalState({
@@ -322,6 +354,158 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearInterval(intervalId);
     };
   }, [isLoggedIn, inactivityTimeoutMinutes]);
+
+  // Helper: parse service date and time to Date object
+  const parseServiceDateTime = (dateStr: string, timeStr?: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    let hours = 8;
+    let minutes = 0;
+
+    if (timeStr) {
+      const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const ampm = match[3]?.toUpperCase();
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+
+    return new Date(year, month - 1, day, hours, minutes);
+  };
+
+  // Direct confirmation from WhatsApp link (?action=confirm&asgId=...&memberId=...)
+  const [directConfirmData, setDirectConfirmData] = useState<{
+    asg: RoleAssignment;
+    prog: ProgramService;
+    role: MediaRole;
+    member: TeamMember;
+  } | null>(null);
+
+  const closeDirectConfirmModal = () => {
+    setDirectConfirmData(null);
+  };
+
+  // Handle direct confirmation link from WhatsApp
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const asgId = urlParams.get('asgId');
+      const memberId = urlParams.get('memberId');
+
+      if (asgId) {
+        const foundAsg = assignments.find((a) => a.id === asgId);
+        const targetMemId = memberId || foundAsg?.memberId;
+        const foundMem = members.find((m) => m.id === targetMemId);
+        const foundProg = programs.find((p) => p.id === foundAsg?.programId);
+        const foundRole = roles.find((r) => r.id === foundAsg?.roleId);
+        const targetAcc = accounts.find((a) => a.memberId === targetMemId);
+
+        if (targetAcc && foundMem && foundAsg && foundProg && foundRole) {
+          // Switch to this member's account and team portal
+          setCurrentAccountId(targetAcc.id);
+          setIsLoggedIn(true);
+          localStorage.setItem(STORAGE_PREFIX + 'is_authenticated', 'true');
+          setActivePortal('team');
+
+          setDirectConfirmData({
+            asg: foundAsg,
+            prog: foundProg,
+            role: foundRole,
+            member: foundMem,
+          });
+
+          showToast(`Welcome ${foundMem.name}! Please confirm your attendance below.`);
+          // Clean URL params so refresh does not pop up unnecessarily
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    } catch {
+      // Ignore URL parsing errors
+    }
+  }, [assignments, members, programs, roles, accounts]);
+
+  // Automated 24-Hour Reminder Task
+  const [automatedReminderModalOpen, setAutomatedReminderModalOpen] = useState(false);
+  const [pending24HourDuties, setPending24HourDuties] = useState<Pending24HourDuty[]>([]);
+
+  const calculatePending24HourDuties = (): Pending24HourDuty[] => {
+    const now = Date.now();
+    const result: Pending24HourDuty[] = [];
+
+    programs.forEach((prog) => {
+      const serviceDt = parseServiceDateTime(prog.date, prog.callTime || prog.startTime);
+      const diffMs = serviceDt.getTime() - now;
+      const hoursRemaining = Math.round(diffMs / (1000 * 60 * 60));
+
+      // Service is within 24 hours (and not older than 4 hours post-start)
+      if (hoursRemaining >= -4 && hoursRemaining <= 24) {
+        const progAsgs = assignments.filter(
+          (a) => a.programId === prog.id && a.memberId && a.status === 'pending'
+        );
+        progAsgs.forEach((asg) => {
+          const mem = members.find((m) => m.id === asg.memberId);
+          const role = roles.find((r) => r.id === asg.roleId);
+          if (mem && role) {
+            result.push({
+              assignment: asg,
+              program: prog,
+              role,
+              member: mem,
+              hoursRemaining: Math.max(0, hoursRemaining),
+            });
+          }
+        });
+      }
+    });
+
+    return result;
+  };
+
+  const trigger24HourScan = () => {
+    const list = calculatePending24HourDuties();
+    setPending24HourDuties(list);
+
+    if (list.length > 0) {
+      list.forEach((item) => {
+        if (!item.assignment.remindersSent.includes('24h')) {
+          setAssignments((prev) =>
+            prev.map((a) =>
+              a.id === item.assignment.id
+                ? { ...a, remindersSent: [...new Set([...a.remindersSent, '24h'])] }
+                : a
+            )
+          );
+          logAction(
+            'Automated 24h Task',
+            '24-Hour Reminder Alert',
+            `Service "${item.program.title}" is within 24 hours. Pending confirmation for ${item.member.name} (${item.role.name}). WhatsApp direct link prepared.`,
+            'reminder'
+          );
+        }
+      });
+      showToast(`24-Hour Reminder Task: Found ${list.length} pending crew members within 24h.`);
+    } else {
+      showToast('24-Hour Reminder Task: All assigned members within 24h are confirmed!');
+    }
+  };
+
+  // Automated background interval: scans every 30 seconds
+  useEffect(() => {
+    const runScan = () => {
+      const list = calculatePending24HourDuties();
+      setPending24HourDuties(list);
+    };
+
+    runScan();
+    const interval = setInterval(runScan, 30000);
+    return () => clearInterval(interval);
+  }, [programs, assignments, members, roles]);
 
   // Sync to localStorage
   useEffect(() => {
@@ -1191,6 +1375,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resetInactivityTimer,
         showInactivityWarning,
         inactivitySecondsRemaining,
+        pending24HourDuties,
+        automatedReminderModalOpen,
+        setAutomatedReminderModalOpen,
+        trigger24HourScan,
+        directConfirmData,
+        closeDirectConfirmModal,
         updateAccountPrivileges,
         checkEmailStatus,
         registerNewMember,

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ProgramService, TeamMember, MediaRole } from '../../types';
 import { X, Send, Copy, Check, MessageSquare } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { getLiveAppBaseUrl } from '../../utils/whatsapp';
 
 interface WhatsAppReminderModalProps {
   program: ProgramService;
@@ -22,7 +23,7 @@ export const WhatsAppReminderModal: React.FC<WhatsAppReminderModalProps> = ({
   selectedMemberId,
   selectedRoleId,
 }) => {
-  const { reminderConfig, showToast } = useApp();
+  const { assignments, reminderConfig, showToast } = useApp();
   const [memberId, setMemberId] = useState<string>(selectedMemberId || members[0]?.id || '');
   const [copied, setCopied] = useState(false);
 
@@ -35,18 +36,35 @@ export const WhatsAppReminderModal: React.FC<WhatsAppReminderModalProps> = ({
   const formattedPhone = currentMember?.phone.replace(/[^0-9]/g, '');
   const cleanPhone = formattedPhone.startsWith('0') ? '233' + formattedPhone.slice(1) : formattedPhone;
 
-  // Use the public shared URL so team members never receive dev-only or restricted 403 links
-  const sharedProductionUrl = 'https://ais-pre-z3xlqsfzebdajhhhc4glht-564557384915.europe-west3.run.app';
-  const appUrl = window.location.origin.includes('ais-dev') ? sharedProductionUrl : window.location.origin;
+  // Find assignment to build personalized one-tap confirmation link
+  const targetAsg = assignments.find(
+    (a) => a.programId === program.id && a.memberId === currentMember?.id && a.roleId === currentRole?.id
+  ) || assignments.find(
+    (a) => a.programId === program.id && a.memberId === currentMember?.id
+  );
 
-  const messageText = reminderConfig.whatsappTemplate
+  const baseUrl = getLiveAppBaseUrl();
+  const confirmUrl = targetAsg && currentMember
+    ? `${baseUrl}/?action=confirm&asgId=${targetAsg.id}&memberId=${currentMember.id}`
+    : baseUrl;
+
+  let template = reminderConfig?.whatsappTemplate || `*AKWC MEDIA TEAM ROSTER ALERT* 🎙️🎥\n\nDear {memberName},\nYou are assigned to serve in the upcoming service:\n*Service:* {serviceTitle}\n*Date:* {serviceDate}\n*Call Time:* {callTime} (Strict)\n*Role:* {roleName}\n*Station:* {stationLocation}\n\nPlease confirm your attendance on MediaServe:\n{appLink}\n\n_COP Akweteyman Worship Center (AKWC)_`;
+
+  // Self-heal: Clean any broken/stale URLs like obuobibernard.github.io
+  template = template.replace(/https?:\/\/[^\s]*github\.io[^\s]*/gi, '{appLink}');
+  template = template.replace(/https?:\/\/[^\s]*obuobibernard[^\s]*/gi, '{appLink}');
+  if (!template.includes('{appLink}')) {
+    template += '\n\nPlease confirm your attendance on MediaServe:\n{appLink}';
+  }
+
+  const messageText = template
     .replace('{memberName}', currentMember?.name || 'Beloved Team Member')
     .replace('{serviceTitle}', program.title)
     .replace('{serviceDate}', `${program.date} (${program.startTime})`)
     .replace('{callTime}', program.callTime)
     .replace('{roleName}', currentRole?.name || 'Media Crew')
     .replace('{stationLocation}', currentRole?.station || program.location)
-    .replace('{appLink}', appUrl)
+    .replace('{appLink}', confirmUrl)
     + `\n\n_(📱 iPhone tip: Tap 'Close and continue' or open in Safari/Chrome if prompted)_`;
 
   const handleCopy = () => {

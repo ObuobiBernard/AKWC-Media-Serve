@@ -13,6 +13,8 @@ import { AdminPortal } from './components/portals/AdminPortal';
 import { ToastNotification } from './components/shared/ToastNotification';
 import { WhatsAppNotificationModal } from './components/shared/WhatsAppNotificationModal';
 import { InactivityWarningModal } from './components/shared/InactivityWarningModal';
+import { DirectConfirmationModal } from './components/shared/DirectConfirmationModal';
+import { Automated24HourReminderModal } from './components/shared/Automated24HourReminderModal';
 
 const MainContent: React.FC = () => {
   const { activePortal } = useApp();
@@ -27,7 +29,14 @@ const MainContent: React.FC = () => {
 };
 
 const AppShell: React.FC = () => {
-  const { isLoggedIn } = useApp();
+  const {
+    isLoggedIn,
+    directConfirmData,
+    closeDirectConfirmModal,
+    automatedReminderModalOpen,
+    setAutomatedReminderModalOpen,
+    pending24HourDuties,
+  } = useApp();
 
   if (!isLoggedIn) {
     return (
@@ -54,6 +63,24 @@ const AppShell: React.FC = () => {
       </footer>
       <WhatsAppNotificationModal />
       <InactivityWarningModal />
+
+      {directConfirmData && (
+        <DirectConfirmationModal
+          isOpen={Boolean(directConfirmData)}
+          onClose={closeDirectConfirmModal}
+          assignment={directConfirmData.asg}
+          program={directConfirmData.prog}
+          role={directConfirmData.role}
+          member={directConfirmData.member}
+        />
+      )}
+
+      <Automated24HourReminderModal
+        isOpen={automatedReminderModalOpen}
+        onClose={() => setAutomatedReminderModalOpen(false)}
+        pendingDuties={pending24HourDuties}
+      />
+
       <ToastNotification />
     </div>
   );
