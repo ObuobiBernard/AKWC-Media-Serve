@@ -32,7 +32,6 @@ export const LoginPage: React.FC = () => {
     setupFirstTimePassword,
     loginWithPassword,
     registerNewMember,
-    switchAccount,
     inactivityLoggedOut,
     clearInactivityFlag,
   } = useApp();
@@ -71,9 +70,6 @@ export const LoginPage: React.FC = () => {
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regError, setRegError] = useState('');
-
-  // Demo access selector state
-  const [showDemoSelector, setShowDemoSelector] = useState(false);
 
   // Check email when user clicks "Continue" or presses enter
   const handleCheckEmail = (e?: React.FormEvent) => {
@@ -473,24 +469,6 @@ export const LoginPage: React.FC = () => {
                             {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                           </button>
                         </div>
-
-                        {email.trim().toLowerCase() === 'bernardoobuobi@gmail.com' && (
-                          <div className="mt-2.5 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-300 flex items-center justify-between gap-2">
-                            <div>
-                              <div className="font-semibold text-white text-[11px]">Super Administrator Account</div>
-                              <div className="text-[11px] text-amber-200/90">
-                                Password: <code className="bg-slate-900 px-1.5 py-0.5 rounded font-mono text-white select-all">MediaServe2026!</code>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setPassword('MediaServe2026!')}
-                              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] rounded-lg transition-colors shrink-0"
-                            >
-                              Fill Password
-                            </button>
-                          </div>
-                        )}
                       </div>
 
                       <button
@@ -782,85 +760,6 @@ export const LoginPage: React.FC = () => {
                 <span>Complete Registration & Enter MediaServe</span>
               </button>
             </form>
-          )}
-        </div>
-
-        {/* Quick Demo Access Bar (Convenience for testing across different leadership/team roles) */}
-        <div className="mt-6 text-center">
-          <button
-            type="button"
-            onClick={() => setShowDemoSelector(!showDemoSelector)}
-            className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-amber-400 transition-colors"
-          >
-            <Shield className="w-3.5 h-3.5 text-amber-500/80" />
-            <span>Quick Demo Login (for leaders & testers)</span>
-            <ChevronDown
-              className={`w-3.5 h-3.5 transition-transform ${showDemoSelector ? 'rotate-180' : ''}`}
-            />
-          </button>
-
-          {showDemoSelector && (
-            <div className="mt-3 p-3 bg-slate-900/90 border border-slate-800 rounded-xl text-left space-y-2.5 animate-in fade-in duration-150">
-              {/* Highlight Super Admin Account */}
-              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center justify-center font-bold text-xs shrink-0">
-                    BO
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-bold text-white">Bernard Owusu Obuobi</span>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold">
-                        Super Admin
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      bernardoobuobi@gmail.com · Password: <code className="text-amber-300 font-mono font-bold">MediaServe2026!</code>
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const bernardAcc = availableAccounts.find(
-                      (a) => a.email.toLowerCase() === 'bernardoobuobi@gmail.com'
-                    );
-                    if (bernardAcc) switchAccount(bernardAcc.id);
-                  }}
-                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition-colors shrink-0 shadow-xs"
-                >
-                  Log in as Admin
-                </button>
-              </div>
-
-              <div className="text-[11px] text-slate-400 font-medium pt-1">
-                Other team members (instant login):
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                {availableAccounts.slice(0, 6).map((acc) => {
-                  const m = members.find((mem) => mem.id === acc.memberId);
-                  const r = roles.find((role) => role.id === m?.primaryRole);
-                  return (
-                    <button
-                      key={acc.id}
-                      type="button"
-                      onClick={() => switchAccount(acc.id)}
-                      className="p-2 rounded-lg bg-slate-950 border border-slate-800/80 hover:border-amber-500/40 text-left transition-colors flex items-center gap-2 group"
-                    >
-                      <div className="w-6 h-6 rounded-md bg-amber-500/10 text-amber-300 flex items-center justify-center font-bold text-[10px] shrink-0">
-                        {m?.name.charAt(0) || 'M'}
-                      </div>
-                      <div className="truncate">
-                        <div className="text-xs font-semibold text-slate-200 group-hover:text-amber-300 truncate">
-                          {m?.name}
-                        </div>
-                        <div className="text-[10px] text-slate-500 truncate">{r?.name}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
           )}
         </div>
       </div>

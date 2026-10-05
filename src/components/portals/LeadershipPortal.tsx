@@ -20,6 +20,7 @@ import {
   Sparkles,
   Users,
   RotateCcw,
+  Shield,
 } from 'lucide-react';
 
 export const LeadershipPortal: React.FC = () => {
@@ -28,6 +29,7 @@ export const LeadershipPortal: React.FC = () => {
     assignments,
     roles,
     members,
+    availableAccounts,
     currentMember,
     createProgram,
     deleteProgram,
@@ -70,6 +72,18 @@ export const LeadershipPortal: React.FC = () => {
   const [newLocation, setNewLocation] = useState('Main Sanctuary & Media Suite, AKWC');
   const [newTheme, setNewTheme] = useState('');
   const [newDirector, setNewDirector] = useState(currentMember.name);
+
+  // Active leaders list for assigning Duty Directors
+  const leadersList = members.filter(
+    (m) =>
+      Boolean(m.isLeader) ||
+      m.email.toLowerCase() === 'bernardoobuobi@gmail.com' ||
+      Boolean(
+        availableAccounts.find(
+          (a) => a.memberId === m.id || a.email.toLowerCase() === m.email.toLowerCase()
+        )?.allowedPortals.includes('leadership')
+      )
+  );
 
   // Assignments for current program
   const currentAssignments = assignments.filter((a) => a.programId === selectedProgram?.id);
@@ -170,8 +184,14 @@ export const LeadershipPortal: React.FC = () => {
       <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-7 space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
-              Core Leadership Workflow
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+                Core Leadership Workflow
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 font-semibold flex items-center gap-1">
+                <Shield className="w-3 h-3" />
+                <span>Authorized Leader: {currentMember.name}</span>
+              </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-extrabold text-white mt-0.5">
               Create → Assign → Remind → Confirm → Monitor
@@ -183,8 +203,15 @@ export const LeadershipPortal: React.FC = () => {
 
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setCreateProgOpen(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-amber-500/10 transition-colors"
+              onClick={() => {
+                const defaultDir =
+                  leadersList.find((l) => l.name === currentMember.name)?.name ||
+                  leadersList[0]?.name ||
+                  currentMember.name;
+                setNewDirector(defaultDir);
+                setCreateProgOpen(true);
+              }}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-amber-500/10 transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>+ Create Service</span>
@@ -416,6 +443,14 @@ export const LeadershipPortal: React.FC = () => {
                             <div>
                               <div className="font-medium text-slate-100 flex items-center gap-1.5">
                                 <span>{assignedMember.name}</span>
+                                {(Boolean(assignedMember.isLeader) ||
+                                  assignedMember.email.toLowerCase() === 'bernardoobuobi@gmail.com' ||
+                                  Boolean(availableAccounts.find((a) => a.memberId === assignedMember.id || a.email.toLowerCase() === assignedMember.email.toLowerCase())?.allowedPortals.includes('leadership'))
+                                ) && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 font-semibold">
+                                    Leader
+                                  </span>
+                                )}
                                 {asg?.replacementForMemberId && (
                                   <span className="text-[10px] text-amber-400 font-normal">
                                     (Replacement)
@@ -504,11 +539,17 @@ export const LeadershipPortal: React.FC = () => {
                             <option value="">{assignedMember ? 'Change Member...' : 'Assign Member...'}</option>
                             {members
                               .filter((m) => m.status === 'active')
-                              .map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.name} ({m.skillLevel})
-                                </option>
-                              ))}
+                              .map((m) => {
+                                const isLdr =
+                                  Boolean(m.isLeader) ||
+                                  m.email.toLowerCase() === 'bernardoobuobi@gmail.com' ||
+                                  Boolean(availableAccounts.find((a) => a.memberId === m.id || a.email.toLowerCase() === m.email.toLowerCase())?.allowedPortals.includes('leadership'));
+                                return (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name} {isLdr ? '⭐ (Leader)' : ''} ({m.skillLevel})
+                                  </option>
+                                );
+                              })}
                           </select>
 
                           {/* WhatsApp alert */}
@@ -694,14 +735,22 @@ export const LeadershipPortal: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-300 font-medium mb-1">Duty Director</label>
-                <input
-                  type="text"
+                <label className="block text-slate-300 font-medium mb-1">Duty Director (Lead)</label>
+                <select
                   value={newDirector}
                   onChange={(e) => setNewDirector(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50"
                   required
-                />
+                >
+                  {leadersList.map((ldr) => (
+                    <option key={ldr.id} value={ldr.name}>
+                      {ldr.name} {ldr.email.toLowerCase() === 'bernardoobuobi@gmail.com' ? '(Super Admin)' : '(Leader)'}
+                    </option>
+                  ))}
+                  {!leadersList.some((l) => l.name === currentMember.name) && (
+                    <option value={currentMember.name}>{currentMember.name} (Current Leader)</option>
+                  )}
+                </select>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">

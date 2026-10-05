@@ -31,6 +31,7 @@ export interface TeamMember {
   status: 'active' | 'leave' | 'training';
   joinedDate: string;
   notes?: string;
+  isLeader?: boolean;
   blackoutDates?: string[]; // ISO date strings when member is unavailable
 }
 

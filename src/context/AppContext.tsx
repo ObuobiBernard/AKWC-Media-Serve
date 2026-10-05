@@ -40,6 +40,7 @@ interface AppContextType {
   // Auth & Navigation
   isLoggedIn: boolean;
   isSuperAdmin: boolean;
+  isLeader: boolean;
   currentAccount: UserAccount;
   currentMember: TeamMember;
   activePortal: PortalType;
@@ -51,6 +52,10 @@ interface AppContextType {
     targetAccountId: string,
     newAllowedPortals: PortalType[],
     defaultPortal?: PortalType
+  ) => { success: boolean; message: string };
+  toggleMemberLeadership: (
+    memberId: string,
+    forceStatus?: boolean
   ) => { success: boolean; message: string };
   checkEmailStatus: (email: string) => {
     status: 'not_found' | 'needs_password' | 'has_password';
@@ -240,6 +245,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const isSuperAdmin = currentAccount.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+  const isLeader =
+    isSuperAdmin ||
+    currentAccount.allowedPortals.includes('leadership') ||
+    Boolean(currentMember?.isLeader);
 
   // WhatsApp Automated Duty Dispatch Modal state
   const [whatsAppModalState, setWhatsAppModalState] = useState<WhatsAppNotificationModalState | null>(null);
@@ -552,6 +561,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_PREFIX + 'active_portal', activePortal);
   }, [activePortal]);
 
+  // Cross-portal and cross-tab real-time synchronization
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (!e.key || !e.key.startsWith(STORAGE_PREFIX) || !e.newValue) return;
+      try {
+        const key = e.key.replace(STORAGE_PREFIX, '');
+        if (key === 'roles') setRoles(JSON.parse(e.newValue));
+        if (key === 'members') setMembers(JSON.parse(e.newValue));
+        if (key === 'accounts') setAccounts(JSON.parse(e.newValue));
+        if (key === 'programs') setPrograms(JSON.parse(e.newValue));
+        if (key === 'assignments') setAssignments(JSON.parse(e.newValue));
+        if (key === 'announcements') setAnnouncements(JSON.parse(e.newValue));
+        if (key === 'verse') setVerse(JSON.parse(e.newValue));
+        if (key === 'reminder_config') setReminderConfig(JSON.parse(e.newValue));
+        if (key === 'audit_logs') setAuditLogs(JSON.parse(e.newValue));
+      } catch (err) {
+        console.error('Storage sync error:', err);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // Auth switch
   const switchAccount = (accountId: string) => {
     const acc = accounts.find((a) => a.id === accountId);
@@ -699,16 +732,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Only accounts with leadership permission or super admin can access leadership portal
-    if (portal === 'leadership' && !isSuperAdmin && !currentAccount.allowedPortals.includes('leadership')) {
+    const userHasLeadership =
+      isSuperAdmin ||
+      currentAccount.allowedPortals.includes('leadership') ||
+      Boolean(currentMember?.isLeader);
+
+    if (portal === 'leadership' && !userHasLeadership) {
       showToast('Access Denied: You do not have Leadership privileges.');
       return;
     }
 
-    if (currentAccount.allowedPortals.includes(portal) || isSuperAdmin) {
-      setActivePortal(portal);
-    } else {
-      showToast(`Access restricted: Your account does not have permission for the ${portal} portal.`);
-    }
+    setActivePortal(portal);
   };
 
   const updateAccountPrivileges = (
@@ -740,10 +774,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       sanitizedPortals.push('team');
     }
 
+    const isGrantedLeadership = sanitizedPortals.includes('leadership');
+
     setAccounts((prev) =>
       prev.map((a) => {
         if (a.id === targetAccountId) {
-          const def = defaultPortal || (sanitizedPortals.includes(a.defaultPortal) ? a.defaultPortal : 'team');
+          const def =
+            defaultPortal ||
+            (sanitizedPortals.includes(a.defaultPortal)
+              ? a.defaultPortal
+              : isGrantedLeadership
+              ? 'leadership'
+              : 'team');
           return {
             ...a,
             allowedPortals: sanitizedPortals,
@@ -754,16 +796,102 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
+    // Synchronize isLeader on members so changes reflect on all portals
+    setMembers((prev) =>
+      prev.map((m) => {
+        if (m.id === targetAcc.memberId || m.email.toLowerCase() === targetAcc.email.toLowerCase()) {
+          return {
+            ...m,
+            isLeader: isGrantedLeadership,
+          };
+        }
+        return m;
+      })
+    );
+
     const mem = members.find((m) => m.id === targetAcc.memberId);
     logAction(
       currentMember.name,
       'Updated Team Member Privileges',
-      `Super Admin updated portal permissions for ${mem?.name || targetAcc.email} to: [${sanitizedPortals.join(', ')}].`,
+      `Super Admin updated portal permissions for ${mem?.name || targetAcc.email} to: [${sanitizedPortals.join(', ')}]. Leader status: ${isGrantedLeadership ? 'Granted' : 'Revoked'}.`,
       'system'
     );
 
-    showToast(`Updated privileges for ${mem?.name || targetAcc.email}`);
+    showToast(`Updated privileges for ${mem?.name || targetAcc.email} (${isGrantedLeadership ? 'Leader' : 'Team Member'})`);
     return { success: true, message: 'Privileges updated successfully.' };
+  };
+
+  const toggleMemberLeadership = (
+    memberId: string,
+    forceStatus?: boolean
+  ): { success: boolean; message: string } => {
+    const mem = members.find((m) => m.id === memberId);
+    if (!mem) {
+      return { success: false, message: 'Member not found in team directory.' };
+    }
+
+    const newIsLeader = forceStatus !== undefined ? forceStatus : !Boolean(mem.isLeader);
+
+    // 1. Synchronize members state & localStorage
+    const updatedMembers = members.map((m) =>
+      m.id === memberId ? { ...m, isLeader: newIsLeader } : m
+    );
+    setMembers(updatedMembers);
+    localStorage.setItem(STORAGE_PREFIX + 'members', JSON.stringify(updatedMembers));
+
+    // 2. Synchronize or create matching user account
+    let accountMatched = false;
+    const updatedAccounts = accounts.map((a) => {
+      if (a.memberId === memberId || a.email.toLowerCase() === mem.email.toLowerCase()) {
+        accountMatched = true;
+        const currentAllowed = a.allowedPortals || ['team'];
+        let newAllowed: PortalType[];
+        if (newIsLeader) {
+          newAllowed = Array.from(new Set([...currentAllowed, 'leadership', 'team'])) as PortalType[];
+        } else {
+          newAllowed = currentAllowed.filter((p) => p !== 'leadership');
+          if (!newAllowed.includes('team')) newAllowed.push('team');
+        }
+        return {
+          ...a,
+          allowedPortals: newAllowed,
+          defaultPortal: (newIsLeader ? 'leadership' : 'team') as PortalType,
+        };
+      }
+      return a;
+    });
+
+    if (!accountMatched) {
+      const newAcc: UserAccount = {
+        id: generateUniqueId('acc'),
+        email: mem.email,
+        memberId: mem.id,
+        allowedPortals: newIsLeader ? ['leadership', 'team'] : ['team'],
+        defaultPortal: newIsLeader ? 'leadership' : 'team',
+        hasSetPassword: false,
+      };
+      updatedAccounts.push(newAcc);
+    }
+
+    setAccounts(updatedAccounts);
+    localStorage.setItem(STORAGE_PREFIX + 'accounts', JSON.stringify(updatedAccounts));
+
+    logAction(
+      currentMember.name,
+      newIsLeader ? 'Promoted to Leader' : 'Revoked Leadership',
+      `${mem.name} (${mem.email}) ${
+        newIsLeader
+          ? 'was granted Leadership privileges (can create programs, assign station duties, and dispatch WhatsApp call-time reminders).'
+          : 'leadership privileges were revoked.'
+      }`,
+      'system'
+    );
+
+    const msg = newIsLeader
+      ? `${mem.name} is now an authorized Media Leader! They can create programs, assign station duties, and manage rosters.`
+      : `Revoked leadership privileges for ${mem.name}.`;
+    showToast(msg);
+    return { success: true, message: msg };
   };
 
   const setupFirstTimePassword = (email: string, newPassword: string) => {
@@ -1270,19 +1398,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setMembers((prev) => [...prev, created]);
 
     // Create an account for them
+    const newAllowed: PortalType[] = newMem.isLeader ? ['leadership', 'team'] : ['team'];
     const newAcc: UserAccount = {
       id: generateUniqueId('acc'),
       email: newMem.email,
       memberId: id,
-      allowedPortals: ['team'],
-      defaultPortal: 'team',
+      allowedPortals: newAllowed,
+      defaultPortal: newMem.isLeader ? 'leadership' : 'team',
     };
     setAccounts((prev) => [...prev, newAcc]);
 
     logAction(
       currentMember.name,
       'Added Team Member',
-      `Added ${newMem.name} to media database with role ${newMem.primaryRole}.`,
+      `Added ${newMem.name} to media database with role ${newMem.primaryRole} (Leadership: ${newMem.isLeader ? 'Leader' : 'Member'}).`,
       'system'
     );
     showToast(`Added member ${newMem.name} to the AKWC Media Team roster!`);
@@ -1291,13 +1420,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateMember = (updatedMem: TeamMember) => {
     setMembers((prev) => prev.map((m) => (m.id === updatedMem.id ? updatedMem : m)));
+
+    // Synchronize account allowedPortals so changes reflect across portals
+    if (updatedMem.isLeader !== undefined) {
+      setAccounts((prev) =>
+        prev.map((a) => {
+          if (a.memberId === updatedMem.id || a.email.toLowerCase() === updatedMem.email.toLowerCase()) {
+            const hasLeadership = a.allowedPortals.includes('leadership');
+            if (updatedMem.isLeader && !hasLeadership) {
+              return {
+                ...a,
+                allowedPortals: Array.from(new Set([...a.allowedPortals, 'leadership'])) as PortalType[],
+                defaultPortal: 'leadership' as PortalType,
+              };
+            } else if (!updatedMem.isLeader && hasLeadership && a.email.toLowerCase() !== SUPER_ADMIN_EMAIL.toLowerCase()) {
+              return {
+                ...a,
+                allowedPortals: a.allowedPortals.filter((p) => p !== 'leadership'),
+                defaultPortal: 'team' as PortalType,
+              };
+            }
+          }
+          return a;
+        })
+      );
+    }
+
     logAction(
       currentMember.name,
       'Updated Team Member',
-      `Updated profile information for ${updatedMem.name}.`,
+      `Updated profile information for ${updatedMem.name} (Leadership: ${updatedMem.isLeader ? 'Leader' : 'Member'}).`,
       'system'
     );
-    showToast(`Member profile updated.`);
+    showToast(`Member profile updated for ${updatedMem.name}`);
   };
 
   const deleteMember = (memberId: string) => {
@@ -1361,6 +1516,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       value={{
         isLoggedIn,
         isSuperAdmin,
+        isLeader,
         currentAccount,
         currentMember,
         activePortal,
@@ -1382,6 +1538,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         directConfirmData,
         closeDirectConfirmModal,
         updateAccountPrivileges,
+        toggleMemberLeadership,
         checkEmailStatus,
         registerNewMember,
         setupFirstTimePassword,

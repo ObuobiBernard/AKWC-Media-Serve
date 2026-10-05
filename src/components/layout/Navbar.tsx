@@ -14,11 +14,16 @@ export const Navbar: React.FC = () => {
     resetToDefaults,
     logout,
     isSuperAdmin,
+    isLeader,
   } = useApp();
 
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
 
-  const hasLeadership = currentAccount.allowedPortals.includes('leadership') || isSuperAdmin;
+  const hasLeadership =
+    isSuperAdmin ||
+    isLeader ||
+    currentAccount.allowedPortals.includes('leadership') ||
+    Boolean(currentMember?.isLeader);
 
   const portals: { id: PortalType; label: string; icon: React.ReactNode }[] = [
     { id: 'team', label: 'Team Portal', icon: <User className="w-3.5 h-3.5" /> },
@@ -49,21 +54,26 @@ export const Navbar: React.FC = () => {
           <nav className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl">
             {portals.map((p) => {
               const isActive = activePortal === p.id;
-              const hasAccess = currentAccount.allowedPortals.includes(p.id);
+              const hasAccess =
+                p.id === 'admin'
+                  ? isSuperAdmin
+                  : p.id === 'leadership'
+                  ? hasLeadership
+                  : true;
 
               return (
                 <button
                   key={p.id}
                   onClick={() => switchPortal(p.id)}
                   disabled={!hasAccess}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all whitespace-nowrap ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all whitespace-nowrap cursor-pointer ${
                     isActive
                       ? 'bg-amber-500 text-slate-950 font-semibold shadow-xs'
                       : hasAccess
                       ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                       : 'text-slate-600 cursor-not-allowed opacity-50'
                   }`}
-                  title={!hasAccess ? `Your account (${currentAccount.email}) lacks ${p.label} privileges` : ''}
+                  title={!hasAccess ? `Your account lacks ${p.label} privileges` : ''}
                 >
                   {p.icon}
                   <span>{p.label}</span>

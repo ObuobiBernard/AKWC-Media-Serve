@@ -39,6 +39,8 @@ export const AdminPortal: React.FC = () => {
     auditLogs,
     availableAccounts,
     updateAccountPrivileges,
+    toggleMemberLeadership,
+    switchPortal,
     addMember,
     updateMember,
     deleteMember,
@@ -91,6 +93,9 @@ export const AdminPortal: React.FC = () => {
   const [annContent, setAnnContent] = useState('');
   const [annPriority, setAnnPriority] = useState<'normal' | 'urgent'>('normal');
 
+  // Leadership privilege toggle in member modal
+  const [memIsLeader, setMemIsLeader] = useState(false);
+
   // Filtered members list
   const filteredMembers = members.filter((m) => {
     const matchesSearch =
@@ -109,6 +114,7 @@ export const AdminPortal: React.FC = () => {
     setMemPrimaryRole(roles[0]?.id || '');
     setMemSkillLevel('Intermediate');
     setMemNotes('');
+    setMemIsLeader(false);
     setEditMemberModalOpen(true);
   };
 
@@ -120,6 +126,10 @@ export const AdminPortal: React.FC = () => {
     setMemPrimaryRole(m.primaryRole);
     setMemSkillLevel(m.skillLevel);
     setMemNotes(m.notes || '');
+    const acc = availableAccounts.find(
+      (a) => a.memberId === m.id || a.email.toLowerCase() === m.email.toLowerCase()
+    );
+    setMemIsLeader(Boolean(m.isLeader || acc?.allowedPortals.includes('leadership')));
     setEditMemberModalOpen(true);
   };
 
@@ -136,9 +146,11 @@ export const AdminPortal: React.FC = () => {
         primaryRole: memPrimaryRole,
         skillLevel: memSkillLevel,
         notes: memNotes,
+        isLeader: memIsLeader,
       });
+      toggleMemberLeadership(editingMember.id, memIsLeader);
     } else {
-      addMember({
+      const newId = addMember({
         name: memName,
         email: memEmail,
         phone: memPhone,
@@ -148,7 +160,11 @@ export const AdminPortal: React.FC = () => {
         status: 'active',
         joinedDate: new Date().toISOString().split('T')[0],
         notes: memNotes,
+        isLeader: memIsLeader,
       });
+      if (newId && memIsLeader) {
+        toggleMemberLeadership(newId, true);
+      }
     }
     setEditMemberModalOpen(false);
   };
@@ -324,7 +340,15 @@ export const AdminPortal: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => switchPortal('leadership')}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+            >
+              <Radio className="w-4 h-4" />
+              <span>Leadership Portal (Rosters & Services)</span>
+            </button>
             <button
               onClick={handleExportMembersCsv}
               className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs rounded-xl transition-colors"
@@ -443,6 +467,7 @@ export const AdminPortal: React.FC = () => {
                     <th className="py-3 px-4">Primary Station</th>
                     <th className="py-3 px-4">Skill Rating</th>
                     <th className="py-3 px-4">Availability</th>
+                    <th className="py-3 px-4">Portal Role</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
@@ -498,6 +523,32 @@ export const AdminPortal: React.FC = () => {
                           <span className="text-slate-300 font-medium">
                             {m.availability || 'Flexible'}
                           </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {m.email.toLowerCase() === 'bernardoobuobi@gmail.com' ? (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold text-[10px]">
+                              Super Admin
+                            </span>
+                          ) : m.isLeader || acc?.allowedPortals.includes('leadership') ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleMemberLeadership(m.id, false)}
+                              title="Click to revoke leadership"
+                              className="px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-rose-500/20 text-blue-400 hover:text-rose-300 border border-blue-500/30 hover:border-rose-500/40 font-semibold text-[10px] inline-flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <Shield className="w-3 h-3" />
+                              <span>Leader</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => toggleMemberLeadership(m.id, true)}
+                              title="Click to promote to leader"
+                              className="px-2 py-0.5 rounded-full bg-slate-800 hover:bg-blue-600 hover:text-white text-slate-400 font-medium text-[10px] transition-colors cursor-pointer"
+                            >
+                              + Make Leader
+                            </button>
+                          )}
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-1.5">
@@ -672,11 +723,8 @@ export const AdminPortal: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => {
-                            if (hasLeadership) {
-                              updateAccountPrivileges(acc.id, ['team']);
-                            } else {
-                              updateAccountPrivileges(acc.id, ['leadership', 'team'], 'leadership');
-                            }
+                            const targetMemId = mem?.id || acc.memberId;
+                            toggleMemberLeadership(targetMemId, !hasLeadership);
                           }}
                           className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all flex items-center gap-1.5 ${
                             hasLeadership
@@ -1031,6 +1079,31 @@ export const AdminPortal: React.FC = () => {
                   onChange={(e) => setMemNotes(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50"
                 />
+              </div>
+
+              {/* Leadership Privileges Section */}
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-white text-xs flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Leadership Privileges</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Allows member to access Leadership Portal, create programs, assign station duties, and dispatch call-time reminders.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMemIsLeader(!memIsLeader)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                    memIsLeader
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Shield className="w-3 h-3" />
+                  <span>{memIsLeader ? '✓ Leader Authorized' : '+ Grant Leader Access'}</span>
+                </button>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">

@@ -21,6 +21,8 @@ import {
   CalendarDays,
   Check,
   KeyRound,
+  Shield,
+  ArrowRight,
 } from 'lucide-react';
 import { ProgramService, RoleAssignment, MediaRole } from '../../types';
 
@@ -36,8 +38,17 @@ export const TeamPortal: React.FC = () => {
     confirmAttendance,
     declineAttendance,
     updateMember,
+    switchPortal,
+    isSuperAdmin,
+    isLeader,
     showToast,
   } = useApp();
+
+  const userHasLeadership =
+    isSuperAdmin ||
+    isLeader ||
+    currentAccount.allowedPortals.includes('leadership') ||
+    Boolean(currentMember.isLeader);
 
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
 
@@ -140,6 +151,36 @@ export const TeamPortal: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
+      {/* Leadership Access Notification Banner */}
+      {userHasLeadership && (
+        <section className="p-4 sm:p-5 bg-gradient-to-r from-blue-950/50 via-slate-900 to-amber-950/30 border border-blue-500/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg shadow-blue-950/20 animate-in fade-in">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 text-blue-400 flex items-center justify-center shrink-0">
+              <Radio className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white text-sm">Media Ministry Leadership Access Active</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500 text-white font-bold uppercase tracking-wide">
+                  Authorized Leader
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                You have leadership authorization to create service programs, auto-fill qualified crew, assign station duties, and dispatch WhatsApp call-time reminders.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => switchPortal('leadership')}
+            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-md transition-all shrink-0 flex items-center gap-2 cursor-pointer"
+          >
+            <span>Open Leadership Portal</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </section>
+      )}
+
       {/* Hero Welcome Banner */}
       <section className="relative overflow-hidden rounded-2xl bg-slate-900 border border-slate-800 p-6 sm:p-8">
         <img
@@ -155,7 +196,14 @@ export const TeamPortal: React.FC = () => {
               <Radio className="w-3.5 h-3.5" />
               <span>AKWC Media Team Roster Portal</span>
               <span aria-hidden="true" className="text-slate-600">·</span>
-              <span className="text-slate-400">Verified Member</span>
+              {userHasLeadership ? (
+                <span className="text-blue-400 font-semibold flex items-center gap-1">
+                  <Shield className="w-3 h-3" />
+                  <span>Media Ministry Leader</span>
+                </span>
+              ) : (
+                <span className="text-slate-400">Verified Member</span>
+              )}
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
               Welcome, {currentMember.name}

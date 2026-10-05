@@ -3,16 +3,13 @@ import { useApp } from '../../context/AppContext';
 import {
   X,
   ShieldCheck,
-  UserCheck,
   KeyRound,
   Check,
-  ArrowRight,
   Lock,
   Eye,
   EyeOff,
   Sparkles,
   AlertCircle,
-  RotateCcw,
 } from 'lucide-react';
 
 interface AccountSwitcherModalProps {
@@ -27,13 +24,12 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
     availableAccounts,
     members,
     roles,
-    switchAccount,
     setupFirstTimePassword,
     loginWithPassword,
     resetPasswordForMember,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'first-time' | 'login' | 'roster'>('first-time');
+  const [activeTab, setActiveTab] = useState<'first-time' | 'login'>('first-time');
 
   // First-time setup state
   const [firstTimeEmail, setFirstTimeEmail] = useState(
@@ -104,11 +100,6 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
     }
   };
 
-  const handleQuickSwitch = (accId: string) => {
-    switchAccount(accId);
-    onClose();
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 text-slate-100 max-h-[92vh] overflow-y-auto">
@@ -155,18 +146,6 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
           >
             <KeyRound className="w-3.5 h-3.5" />
             <span>Sign In</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('roster')}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-              activeTab === 'roster'
-                ? 'bg-amber-500 text-slate-950 shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>Quick Switch ({availableAccounts.length})</span>
           </button>
         </div>
 
@@ -383,98 +362,6 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
                 </button>
               </div>
             </form>
-          </div>
-        )}
-
-        {/* TAB 3: QUICK SWITCH (DEVELOPMENT & DEMO INSPECTION) */}
-        {activeTab === 'roster' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>All 16 Verified AKWC Team Accounts:</span>
-              <span>Click to switch instant session</span>
-            </div>
-
-            <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-              {availableAccounts.map((acc) => {
-                const mem = members.find((m) => m.id === acc.memberId);
-                const isCurrent = acc.id === currentAccount.id;
-                const hasPassword = Boolean(acc.hasSetPassword);
-
-                return (
-                  <div
-                    key={acc.id}
-                    className={`p-3 rounded-xl border transition-all flex items-center justify-between ${
-                      isCurrent
-                        ? 'bg-amber-500/10 border-amber-500/60 text-white'
-                        : 'bg-slate-950 border-slate-800 hover:border-slate-700 hover:bg-slate-950/80 text-slate-300'
-                    }`}
-                  >
-                    <div
-                      onClick={() => handleQuickSwitch(acc.id)}
-                      className="flex items-center gap-3 cursor-pointer flex-1"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-amber-400 shrink-0">
-                        {mem?.name ? mem.name.split(' ').map((n) => n[0]).join('') : 'U'}
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-white flex items-center gap-2">
-                          <span>{mem?.name || 'Unknown Member'}</span>
-                          <span className="text-[10px] text-slate-400 font-normal">
-                            · {acc.allowedPortals.join(', ')}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 flex items-center gap-2">
-                          <span>{acc.email}</span>
-                          <span aria-hidden="true">·</span>
-                          {hasPassword ? (
-                            <span className="text-emerald-400 text-[10px]">Password Set</span>
-                          ) : (
-                            <span className="text-amber-400 text-[10px]">Pending Setup</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {!hasPassword && (
-                        <button
-                          onClick={() => {
-                            setFirstTimeEmail(acc.email);
-                            setActiveTab('first-time');
-                          }}
-                          className="px-2 py-1 text-[10px] font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-md transition-colors"
-                        >
-                          Set Password
-                        </button>
-                      )}
-
-                      {hasPassword && (
-                        <button
-                          onClick={() => resetPasswordForMember(acc.email)}
-                          title="Reset password to allow first-time setup again"
-                          className="p-1 text-slate-500 hover:text-amber-400 hover:bg-slate-800 rounded transition-colors"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                        </button>
-                      )}
-
-                      {isCurrent ? (
-                        <span className="flex items-center gap-1 text-xs text-amber-400 font-medium">
-                          <Check className="w-4 h-4" /> Active
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => handleQuickSwitch(acc.id)}
-                          className="text-xs text-slate-500 hover:text-slate-200 flex items-center gap-1"
-                        >
-                          Switch <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
         )}
 
