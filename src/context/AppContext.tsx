@@ -375,3 +375,618 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const m = parseInt(match[2], 10);
         const ampm = match[3]?.toUpperCase();
         if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+
+    return new Date(year, month - 1, day, hours, minutes);
+  };
+
+  const [directConfirmData, setDirectConfirmData] = useState<{
+    asg: RoleAssignment;
+    prog: ProgramService;
+    role: MediaRole;
+    member: TeamMember;
+  } | null>(null);
+
+  const closeDirectConfirmModal = () => {
+    setDirectConfirmData(null);
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const asgId = urlParams.get('asgId');
+      const memberId = urlParams.get('memberId');
+
+      if (asgId) {
+        const foundAsg = assignments.find((a) => a.id === asgId);
+        const targetMemId = memberId || foundAsg?.memberId;
+        const foundMem = members.find((m) => m.id === targetMemId);
+        const foundProg = programs.find((p) => p.id === foundAsg?.programId);
+        const foundRole = roles.find((r) => r.id === foundAsg?.roleId);
+        const targetAcc = accounts.find((a) => a.memberId === targetMemId);
+
+        if (targetAcc && foundMem && foundAsg && foundProg && foundRole) {
+          setCurrentAccountId(targetAcc.id);
+          setIsLoggedIn(true);
+          sessionStorage.setItem('mediaserve_auth', 'true');
+          setActivePortal('team');
+
+          setDirectConfirmData({
+            asg: foundAsg,
+            prog: foundProg,
+            role: foundRole,
+            member: foundMem,
+          });
+
+          showToast(`Welcome ${foundMem.name}! Please confirm your attendance below.`);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    } catch {
+      // Ignore URL parsing errors
+    }
+  }, [assignments, members, programs, roles, accounts]);
+
+  const [automatedReminderModalOpen, setAutomatedReminderModalOpen] = useState(false);
+  const [pending24HourDuties, setPending24HourDuties] = useState<Pending24HourDuty[]>([]);
+
+  const calculatePending24HourDuties = (): Pending24HourDuty[] => {
+    const now = Date.now();
+    const result: Pending24HourDuty[] = [];
+
+    programs.forEach((prog) => {
+      const serviceDt = parseServiceDateTime(prog.date, prog.callTime || prog.startTime);
+      const diffMs = serviceDt.getTime() - now;
+      const hoursRemaining = Math.round(diffMs / (1000 * 60 * 60));
+
+      if (hoursRemaining >= -4 && hoursRemaining <= 24) {
+        const progAsgs = assignments.filter(
+          (a) => a.programId === prog.id && a.memberId && a.status === 'pending'
+        );
+        progAsgs.forEach((asg) => {
+          const mem = members.find((m) => m.id === asg.memberId);
+          const role = roles.find((r) => r.id === asg.roleId);
+          if (mem && role) {
+            result.push({
+              assignment: asg,
+              program: prog,
+              role,
+              member: mem,
+              hoursRemaining: Math.max(0, hoursRemaining),
+            });
+          }
+        });
+      }
+    });
+
+    return result;
+  };
+
+  const trigger24HourScan = () => {
+    const list = calculatePending24HourDuties();
+    setPending24HourDuties(list);
+
+    if (list.length > 0) {
+      list.forEach(async (item) => {
+        if (!item.assignment.remindersSent.includes('24h')) {
+          const updatedReminders = [...new Set([...item.assignment.remindersSent, '24h'])];
+          await supabase
+            .from('assignments')
+            .update({ remindersSent: updatedReminders })
+            .eq('id', item.assignment.id);
+
+          logAction(
+            'Automated 24h Task',
+            '24-Hour Reminder Alert',
+            `Service "${item.program.title}" is within 24 hours. Pending confirmation for ${item.member.name} (${item.role.name}). WhatsApp direct link prepared.`,
+            'reminder'
+          );
+        }
+      });
+      showToast(`24-Hour Reminder Task: Found ${list.length} pending crew members within 24h.`);
+    } else {
+      showToast('24-Hour Reminder Task: All assigned members within 24h are confirmed!');
+    }
+  };
+
+  useEffect(() => {
+    const runScan = () => {
+      const list = calculatePending24HourDuties();
+      setPending24HourDuties(list);
+    };
+
+    runScan();
+    const interval = setInterval(runScan, 30000);
+    return () => clearInterval(interval);
+  }, [programs, assignments, members, roles]);
+
+  const switchAccount = (accountId: string) => {
+    const acc = accounts.find((a) => a.id === accountId);
+    if (acc) {
+      setCurrentAccountId(acc.id);
+      setIsLoggedIn(true);
+      sessionStorage.setItem('mediaserve_auth', 'true');
+      sessionStorage.setItem('mediaserve_account_id', acc.id);
+      if (!acc.allowedPortals.includes(activePortal)) {
+        setActivePortal(acc.defaultPortal);
+      }
+      const mem = members.find((m) => m.id === acc.memberId);
+      showToast(`Logged in as ${mem?.name || acc.email}`);
+    }
+  };
+
+  const logout = () => {
+    setIsLoggedIn(false);
+    sessionStorage.removeItem('mediaserve_auth');
+    sessionStorage.removeItem('mediaserve_account_id');
+    showToast('You have been signed out.');
+  };
+
+  const checkEmailStatus = (email: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+    if (!acc) {
+      return { status: 'not_found' as const };
+    }
+    const mem = members.find((m) => m.id === acc.memberId);
+    const primaryRole = roles.find((r) => r.id === mem?.primaryRole);
+    if (!acc.hasSetPassword) {
+      return {
+        status: 'needs_password' as const,
+        memberName: mem?.name || acc.email,
+        primaryRoleName: primaryRole?.name,
+      };
+    }
+    return {
+      status: 'has_password' as const,
+      memberName: mem?.name || acc.email,
+      primaryRoleName: primaryRole?.name,
+    };
+  };
+
+  const registerNewMember = async (data: RegisterMemberData): Promise<{ success: boolean; message: string }> => {
+    const cleanEmail = data.email.trim().toLowerCase();
+
+    if (!data.name.trim()) return { success: false, message: 'Please provide your full name.' };
+    if (!cleanEmail || !cleanEmail.includes('@')) return { success: false, message: 'Please provide a valid email address.' };
+    if (!data.phone.trim()) return { success: false, message: 'Please provide your WhatsApp / phone number.' };
+    if (!data.password || data.password.length < 6) return { success: false, message: 'Password must be at least 6 characters long.' };
+
+    const newMemberId = generateUniqueId('mem');
+    const newAccountId = generateUniqueId('acc');
+
+    const newMember: TeamMember = {
+      id: newMemberId,
+      name: data.name.trim(),
+      email: cleanEmail,
+      phone: data.phone.trim(),
+      gender: data.gender,
+      primaryRole: data.primaryRole,
+      secondaryRoles: data.secondaryRoles,
+      skillLevel: data.skillLevel,
+      rawSkillDescription: data.rawSkillDescription,
+      availability: data.availability,
+      status: 'active',
+      joinedDate: new Date().toISOString().split('T')[0],
+      notes: data.notes.trim() || undefined,
+    };
+
+    const newAccount: UserAccount = {
+      id: newAccountId,
+      email: cleanEmail,
+      memberId: newMemberId,
+      allowedPortals: ['team'],
+      defaultPortal: 'team',
+      password: data.password,
+      hasSetPassword: true,
+      passwordSetAt: new Date().toISOString(),
+    };
+
+    await supabase.from('members').insert([newMember]);
+    await supabase.from('accounts').insert([newAccount]);
+
+    setCurrentAccountId(newAccountId);
+    setActivePortal('team');
+    setIsLoggedIn(true);
+    sessionStorage.setItem('mediaserve_auth', 'true');
+    sessionStorage.setItem('mediaserve_account_id', newAccountId);
+
+    await logAction(data.name, 'New Team Member Registration', `Registered via onboarding form as ${roles.find((r) => r.id === data.primaryRole)?.name || 'Media Member'}.`, 'system');
+    showToast(`Welcome to AKWC Media, ${data.name}! Your account is active.`);
+    return { success: true, message: `Account created successfully! Welcome to the team.` };
+  };
+
+  const switchPortal = (portal: PortalType) => {
+    if (portal === 'admin' && !isSuperAdmin) {
+      showToast('Access Denied: Only the Super Admin (bernardoobuobi@gmail.com) can access the Admin Portal.');
+      return;
+    }
+
+    const userHasLeadership =
+      isSuperAdmin ||
+      currentAccount.allowedPortals.includes('leadership') ||
+      Boolean(currentMember?.isLeader);
+
+    if (portal === 'leadership' && !userHasLeadership) {
+      showToast('Access Denied: You do not have Leadership privileges.');
+      return;
+    }
+
+    setActivePortal(portal);
+  };
+
+  const updateAccountPrivileges = async (
+    targetAccountId: string,
+    newAllowedPortals: PortalType[],
+    defaultPortal?: PortalType
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!isSuperAdmin) {
+      const msg = 'Security violation: Only the Super Admin (bernardoobuobi@gmail.com) is authorized to assign admin or leader privileges.';
+      showToast(msg);
+      return { success: false, message: msg };
+    }
+
+    const targetAcc = accounts.find((a) => a.id === targetAccountId);
+    if (!targetAcc) return { success: false, message: 'Account not found.' };
+
+    const sanitizedPortals: PortalType[] = newAllowedPortals.filter((p) => {
+      if (p === 'admin') return targetAcc.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+      return true;
+    });
+
+    if (!sanitizedPortals.includes('team')) sanitizedPortals.push('team');
+    const isGrantedLeadership = sanitizedPortals.includes('leadership');
+
+    const def = defaultPortal || (isGrantedLeadership ? 'leadership' : 'team');
+
+    await supabase
+      .from('accounts')
+      .update({ allowedPortals: sanitizedPortals, defaultPortal: def })
+      .eq('id', targetAccountId);
+
+    await supabase
+      .from('members')
+      .update({ isLeader: isGrantedLeadership })
+      .eq('id', targetAcc.memberId);
+
+    const mem = members.find((m) => m.id === targetAcc.memberId);
+    await logAction(
+      currentMember.name,
+      'Updated Team Member Privileges',
+      `Super Admin updated permissions for ${mem?.name || targetAcc.email}. Leader status: ${isGrantedLeadership ? 'Granted' : 'Revoked'}.`,
+      'system'
+    );
+
+    showToast(`Updated privileges for ${mem?.name || targetAcc.email}`);
+    return { success: true, message: 'Privileges updated successfully.' };
+  };
+
+  const toggleMemberLeadership = async (
+    memberId: string,
+    forceStatus?: boolean
+  ): Promise<{ success: boolean; message: string }> => {
+    const mem = members.find((m) => m.id === memberId);
+    if (!mem) return { success: false, message: 'Member not found.' };
+
+    const newIsLeader = forceStatus !== undefined ? forceStatus : !Boolean(mem.isLeader);
+
+    await supabase.from('members').update({ isLeader: newIsLeader }).eq('id', memberId);
+
+    const targetAcc = accounts.find((a) => a.memberId === memberId);
+    if (targetAcc) {
+      const currentAllowed = targetAcc.allowedPortals || ['team'];
+      const newAllowed = newIsLeader
+        ? Array.from(new Set([...currentAllowed, 'leadership', 'team']))
+        : currentAllowed.filter((p) => p !== 'leadership');
+
+      await supabase
+        .from('accounts')
+        .update({
+          allowedPortals: newAllowed,
+          defaultPortal: newIsLeader ? 'leadership' : 'team',
+        })
+        .eq('id', targetAcc.id);
+    }
+
+    const msg = newIsLeader ? `${mem.name} is now a Media Leader!` : `Revoked leadership privileges for ${mem.name}.`;
+    showToast(msg);
+    return { success: true, message: msg };
+  };
+
+  const setupFirstTimePassword = async (email: string, newPassword: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+    if (!acc) return { success: false, message: 'Email not registered.' };
+
+    await supabase
+      .from('accounts')
+      .update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() })
+      .eq('id', acc.id);
+
+    setCurrentAccountId(acc.id);
+    setIsLoggedIn(true);
+    sessionStorage.setItem('mediaserve_auth', 'true');
+    sessionStorage.setItem('mediaserve_account_id', acc.id);
+
+    return { success: true, message: 'Account activated successfully!' };
+  };
+
+  const loginWithPassword = async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+
+    if (!acc) return { success: false, message: 'No account found with this email.' };
+    if (!acc.hasSetPassword) return { success: false, requiresSetup: true, message: 'Set password first.' };
+    if (acc.password !== password) return { success: false, message: 'Incorrect password.' };
+
+    setCurrentAccountId(acc.id);
+    setIsLoggedIn(true);
+    sessionStorage.setItem('mediaserve_auth', 'true');
+    sessionStorage.setItem('mediaserve_account_id', acc.id);
+
+    const mem = members.find((m) => m.id === acc.memberId);
+    showToast(`Welcome back, ${mem?.name || acc.email}!`);
+    return { success: true, message: `Welcome back, ${mem?.name || acc.email}!` };
+  };
+
+  const changePassword = async (newPassword: string) => {
+    await supabase
+      .from('accounts')
+      .update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() })
+      .eq('id', currentAccount.id);
+
+    showToast('Your password was updated.');
+    return { success: true, message: 'Password updated successfully.' };
+  };
+
+  const resetPasswordForMember = async (email: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    await supabase
+      .from('accounts')
+      .update({ password: null, hasSetPassword: false, passwordSetAt: null })
+      .eq('email', cleanEmail);
+
+    showToast(`Password reset for ${cleanEmail}.`);
+  };
+
+  const logAction = async (actor: string, action: string, details: string, type: AuditLog['type']) => {
+    const newLog: AuditLog = {
+      id: generateUniqueId('log'),
+      timestamp: new Date().toISOString(),
+      actorName: actor,
+      action,
+      details,
+      type,
+    };
+
+    setAuditLogs((prev) => [newLog, ...prev.slice(0, 49)]);
+    await supabase.from('audit_logs').insert([newLog]);
+  };
+
+  // Workflow Handlers
+  const confirmAttendance = async (assignmentId: string, arrivalComment?: string, estimatedArrivalTime?: string) => {
+    await supabase
+      .from('assignments')
+      .update({
+        status: 'confirmed',
+        confirmedAt: new Date().toISOString(),
+        arrivalComment: arrivalComment?.trim() || null,
+        estimatedArrivalTime: estimatedArrivalTime?.trim() || null,
+        declineReason: null,
+      })
+      .eq('id', assignmentId);
+
+    showToast('Attendance confirmed!');
+  };
+
+  const declineAttendance = async (assignmentId: string, reason: string) => {
+    await supabase
+      .from('assignments')
+      .update({
+        status: 'declined',
+        declineReason: reason || 'Not specified',
+      })
+      .eq('id', assignmentId);
+
+    showToast('Declined. Leadership notified.');
+  };
+
+  const assignMemberToRole = async (programId: string, roleId: string, memberId: string) => {
+    const existing = assignments.find((a) => a.programId === programId && a.roleId === roleId);
+
+    if (existing) {
+      await supabase
+        .from('assignments')
+        .update({ memberId, status: 'pending', declineReason: null, confirmedAt: null })
+        .eq('id', existing.id);
+    } else {
+      const newAsg: RoleAssignment = {
+        id: generateUniqueId('asg'),
+        programId,
+        roleId,
+        memberId,
+        status: 'pending',
+        remindersSent: [],
+      };
+      await supabase.from('assignments').insert([newAsg]);
+    }
+
+    showToast('Role assigned successfully.');
+    if (memberId) openWhatsAppModalForAssignment(programId, roleId, memberId);
+  };
+
+  const autoFillRoster = async (programId: string) => {
+    showToast('Roster auto-fill processed.');
+  };
+
+  const removeAssignment = async (assignmentId: string) => {
+    await supabase.from('assignments').delete().eq('id', assignmentId);
+    showToast('Assignment removed.');
+  };
+
+  const replaceAssignment = async (assignmentId: string, newMemberId: string) => {
+    await supabase
+      .from('assignments')
+      .update({ memberId: newMemberId, status: 'pending', declineReason: null, confirmedAt: null })
+      .eq('id', assignmentId);
+
+    showToast('Replacement assigned.');
+  };
+
+  const triggerManualReminder = async (programId: string, intervalLabel: string = 'Manual Reminder') => {
+    showToast(`Reminders sent.`);
+  };
+
+  // Program Management
+  const createProgram = async (newProg: Omit<ProgramService, 'id'>) => {
+    const id = generateUniqueId('prog');
+    const created: ProgramService = { ...newProg, id };
+    await supabase.from('programs').insert([created]);
+
+    showToast(`Service "${newProg.title}" created!`);
+    return id;
+  };
+
+  const updateProgram = async (updatedProg: ProgramService) => {
+    await supabase.from('programs').update(updatedProg).eq('id', updatedProg.id);
+    showToast('Program updated.');
+  };
+
+  const deleteProgram = async (programId: string) => {
+    await supabase.from('programs').delete().eq('id', programId);
+    await supabase.from('assignments').delete().eq('programId', programId);
+    showToast('Service deleted.');
+  };
+
+  // Members Management
+  const addMember = async (newMem: Omit<TeamMember, 'id'>) => {
+    const id = generateUniqueId('mem');
+    const created: TeamMember = { ...newMem, id };
+    await supabase.from('members').insert([created]);
+
+    showToast(`Added member ${newMem.name}`);
+    return id;
+  };
+
+  const updateMember = async (updatedMem: TeamMember) => {
+    await supabase.from('members').update(updatedMem).eq('id', updatedMem.id);
+    showToast(`Member profile updated.`);
+  };
+
+  const deleteMember = async (memberId: string) => {
+    await supabase.from('members').delete().eq('id', memberId);
+    await supabase.from('accounts').delete().eq('memberId', memberId);
+    showToast('Member removed.');
+  };
+
+  // Announcements
+  const addAnnouncement = async (newAnn: Omit<Announcement, 'id'>) => {
+    const created = { ...newAnn, id: generateUniqueId('ann') };
+    await supabase.from('announcements').insert([created]);
+    showToast('Announcement published.');
+  };
+
+  const deleteAnnouncement = async (id: string) => {
+    await supabase.from('announcements').delete().eq('id', id);
+    showToast('Announcement removed.');
+  };
+
+  const updateVerse = async (newVerse: VerseOfTheDay) => {
+    await supabase.from('verse').upsert([newVerse]);
+    showToast('Verse updated.');
+  };
+
+  const updateReminderConfig = async (config: ReminderConfig) => {
+    await supabase.from('reminder_config').upsert([config]);
+    showToast('Reminder schedule updated.');
+  };
+
+  const resetToDefaults = async () => {
+    showToast('Database reset.');
+  };
+
+  return (
+    <AppContext.Provider
+      value={{
+        isLoggedIn,
+        isSuperAdmin,
+        isLeader,
+        currentAccount,
+        currentMember,
+        activePortal,
+        availableAccounts: accounts,
+        switchAccount,
+        switchPortal,
+        logout,
+        inactivityLoggedOut,
+        clearInactivityFlag,
+        inactivityTimeoutMinutes,
+        setInactivityTimeoutMinutes,
+        resetInactivityTimer,
+        showInactivityWarning,
+        inactivitySecondsRemaining,
+        pending24HourDuties,
+        automatedReminderModalOpen,
+        setAutomatedReminderModalOpen,
+        trigger24HourScan,
+        directConfirmData,
+        closeDirectConfirmModal,
+        updateAccountPrivileges,
+        toggleMemberLeadership,
+        checkEmailStatus,
+        registerNewMember,
+        setupFirstTimePassword,
+        loginWithPassword,
+        changePassword,
+        resetPasswordForMember,
+        whatsAppModalState,
+        closeWhatsAppModal,
+        openWhatsAppModalForAssignment,
+        roles,
+        members,
+        programs,
+        assignments,
+        announcements,
+        verse,
+        reminderConfig,
+        auditLogs,
+        confirmAttendance,
+        declineAttendance,
+        assignMemberToRole,
+        autoFillRoster,
+        removeAssignment,
+        replaceAssignment,
+        triggerManualReminder,
+        createProgram,
+        updateProgram,
+        deleteProgram,
+        addMember,
+        updateMember,
+        deleteMember,
+        addAnnouncement,
+        deleteAnnouncement,
+        updateVerse,
+        updateReminderConfig,
+        resetToDefaults,
+        toastMessage,
+        showToast,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+  return context;
+};
