@@ -4,7 +4,6 @@
  */
 
 import React from 'react';
-import churchMediaBoothImg from './assets/images/church_media_booth_1791063344649.jpg';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/layout/Navbar';
 import { LoginPage } from './components/auth/LoginPage';
