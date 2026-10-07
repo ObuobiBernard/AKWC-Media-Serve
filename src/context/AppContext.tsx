@@ -637,4 +637,564 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     sessionStorage.setItem('mediaserve_account_id', newAccountId);
 
     await logAction(data.name, 'New Team Member Registration', `Registered via onboarding form as ${roles.find((r) => r.id === data.primaryRole)?.name || 'Media Member'}.`, 'system');
-    showToast(`Welcome to AKWC Media, ${data.
+    showToast(`Welcome to AKWC Media, ${data.name}! Your account is active.`);
+    return { success: true, message: `Account created successfully! Welcome to the team.` };
+  };
+
+  const switchPortal = (portal: PortalType) => {
+    if (portal === 'admin' && !isSuperAdmin) {
+      showToast('Access Denied: Only the Super Admin (bernardoobuobi@gmail.com) can access the Admin Portal.');
+      return;
+    }
+
+    const userHasLeadership =
+      isSuperAdmin ||
+      currentAccount.allowedPortals.includes('leadership') ||
+      Boolean(currentMember?.isLeader);
+
+    if (portal === 'leadership' && !userHasLeadership) {
+      showToast('Access Denied: You do not have Leadership privileges.');
+      return;
+    }
+
+    setActivePortal(portal);
+  };
+
+  const updateAccountPrivileges = async (
+    targetAccountId: string,
+    newAllowedPortals: PortalType[],
+    defaultPortal?: PortalType
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!isSuperAdmin) {
+      const msg = 'Security violation: Only the Super Admin (bernardoobuobi@gmail.com) is authorized to assign admin or leader privileges.';
+      showToast(msg);
+      return { success: false, message: msg };
+    }
+
+    const targetAcc = accounts.find((a) => a.id === targetAccountId);
+    if (!targetAcc) return { success: false, message: 'Account not found.' };
+
+    const sanitizedPortals: PortalType[] = newAllowedPortals.filter((p) => {
+      if (p === 'admin') return targetAcc.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+      return true;
+    });
+
+    if (!sanitizedPortals.includes('team')) sanitizedPortals.push('team');
+    const isGrantedLeadership = sanitizedPortals.includes('leadership');
+
+    const def = defaultPortal || (isGrantedLeadership ? 'leadership' : 'team');
+
+    await supabase
+      .from('accounts')
+      .update({ allowedPortals: sanitizedPortals, defaultPortal: def })
+      .eq('id', targetAccountId);
+
+    await supabase
+      .from('members')
+      .update({ isLeader: isGrantedLeadership })
+      .eq('id', targetAcc.memberId);
+
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === targetAccountId ? { ...a, allowedPortals: sanitizedPortals, defaultPortal: def } : a))
+    );
+
+    const mem = members.find((m) => m.id === targetAcc.memberId);
+    await logAction(
+      currentMember.name,
+      'Updated Team Member Privileges',
+      `Super Admin updated permissions for ${mem?.name || targetAcc.email}. Leader status: ${isGrantedLeadership ? 'Granted' : 'Revoked'}.`,
+      'system'
+    );
+
+    showToast(`Updated privileges for ${mem?.name || targetAcc.email}`);
+    return { success: true, message: 'Privileges updated successfully.' };
+  };
+
+  const toggleMemberLeadership = async (
+    memberId: string,
+    forceStatus?: boolean
+  ): Promise<{ success: boolean; message: string }> => {
+    const mem = members.find((m) => m.id === memberId);
+    if (!mem) return { success: false, message: 'Member not found.' };
+
+    const newIsLeader = forceStatus !== undefined ? forceStatus : !Boolean(mem.isLeader);
+
+    await supabase.from('members').update({ isLeader: newIsLeader }).eq('id', memberId);
+
+    setMembers((prev) =>
+      prev.map((m) => (m.id === memberId ? { ...m, isLeader: newIsLeader } : m))
+    );
+
+    const targetAcc = accounts.find((a) => a.memberId === memberId);
+    if (targetAcc) {
+      const currentAllowed = targetAcc.allowedPortals || ['team'];
+      const newAllowed = newIsLeader
+        ? Array.from(new Set([...currentAllowed, 'leadership', 'team']))
+        : currentAllowed.filter((p) => p !== 'leadership');
+
+      await supabase
+        .from('accounts')
+        .update({
+          allowedPortals: newAllowed,
+          defaultPortal: newIsLeader ? 'leadership' : 'team',
+        })
+        .eq('id', targetAcc.id);
+
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.id === targetAcc.id
+            ? { ...a, allowedPortals: newAllowed, defaultPortal: newIsLeader ? 'leadership' : 'team' }
+            : a
+        )
+      );
+    }
+
+    const msg = newIsLeader ? `${mem.name} is now a Media Leader!` : `Revoked leadership privileges for ${mem.name}.`;
+    showToast(msg);
+    return { success: true, message: msg };
+  };
+
+  const setupFirstTimePassword = async (email: string, newPassword: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+    if (!acc) return { success: false, message: 'Email not registered.' };
+
+    await supabase
+      .from('accounts')
+      .update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() })
+      .eq('id', acc.id);
+
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === acc.id ? { ...a, password: newPassword, hasSetPassword: true } : a))
+    );
+
+    setCurrentAccountId(acc.id);
+    setIsLoggedIn(true);
+    sessionStorage.setItem('mediaserve_auth', 'true');
+    sessionStorage.setItem('mediaserve_account_id', acc.id);
+
+    return { success: true, message: 'Account activated successfully!' };
+  };
+
+  const loginWithPassword = async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+
+    if (!acc) return { success: false, message: 'No account found with this email.' };
+    if (!acc.hasSetPassword) return { success: false, requiresSetup: true, message: 'Set password first.' };
+    if (acc.password !== password) return { success: false, message: 'Incorrect password.' };
+
+    setCurrentAccountId(acc.id);
+    setIsLoggedIn(true);
+    sessionStorage.setItem('mediaserve_auth', 'true');
+    sessionStorage.setItem('mediaserve_account_id', acc.id);
+
+    const mem = members.find((m) => m.id === acc.memberId);
+    showToast(`Welcome back, ${mem?.name || acc.email}!`);
+    return { success: true, message: `Welcome back, ${mem?.name || acc.email}!` };
+  };
+
+  const changePassword = async (newPassword: string) => {
+    await supabase
+      .from('accounts')
+      .update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() })
+      .eq('id', currentAccount.id);
+
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === currentAccount.id ? { ...a, password: newPassword, hasSetPassword: true } : a))
+    );
+
+    showToast('Your password was updated.');
+    return { success: true, message: 'Password updated successfully.' };
+  };
+
+  const resetPasswordForMember = async (email: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    await supabase
+      .from('accounts')
+      .update({ password: null, hasSetPassword: false, passwordSetAt: null })
+      .eq('email', cleanEmail);
+
+    setAccounts((prev) =>
+      prev.map((a) => (a.email.toLowerCase() === cleanEmail ? { ...a, password: undefined, hasSetPassword: false } : a))
+    );
+
+    showToast(`Password reset for ${cleanEmail}.`);
+  };
+
+  const logAction = async (actor: string, action: string, details: string, type: AuditLog['type']) => {
+    const newLog: AuditLog = {
+      id: generateUniqueId('log'),
+      timestamp: new Date().toISOString(),
+      actorName: actor,
+      action,
+      details,
+      type,
+    };
+
+    setAuditLogs((prev) => [newLog, ...prev.slice(0, 49)]);
+    await supabase.from('audit_logs').insert([newLog]);
+  };
+
+  // Workflow Handlers
+  const confirmAttendance = async (assignmentId: string, arrivalComment?: string, estimatedArrivalTime?: string) => {
+    await supabase
+      .from('assignments')
+      .update({
+        status: 'confirmed',
+        confirmedAt: new Date().toISOString(),
+        arrivalComment: arrivalComment?.trim() || null,
+        estimatedArrivalTime: estimatedArrivalTime?.trim() || null,
+        declineReason: null,
+      })
+      .eq('id', assignmentId);
+
+    setAssignments((prev) =>
+      prev.map((a) =>
+        a.id === assignmentId
+          ? {
+              ...a,
+              status: 'confirmed',
+              confirmedAt: new Date().toISOString(),
+              arrivalComment: arrivalComment?.trim() || undefined,
+              estimatedArrivalTime: estimatedArrivalTime?.trim() || undefined,
+            }
+          : a
+      )
+    );
+
+    showToast('Attendance confirmed!');
+  };
+
+  const declineAttendance = async (assignmentId: string, reason: string) => {
+    await supabase
+      .from('assignments')
+      .update({
+        status: 'declined',
+        declineReason: reason || 'Not specified',
+      })
+      .eq('id', assignmentId);
+
+    setAssignments((prev) =>
+      prev.map((a) =>
+        a.id === assignmentId ? { ...a, status: 'declined', declineReason: reason || 'Not specified' } : a
+      )
+    );
+
+    showToast('Declined. Leadership notified.');
+  };
+
+  const assignMemberToRole = async (programId: string, roleId: string, memberId: string) => {
+    const existing = assignments.find((a) => a.programId === programId && a.roleId === roleId);
+
+    if (existing) {
+      await supabase
+        .from('assignments')
+        .update({ memberId, status: 'pending', declineReason: null, confirmedAt: null })
+        .eq('id', existing.id);
+
+      setAssignments((prev) =>
+        prev.map((a) => (a.id === existing.id ? { ...a, memberId, status: 'pending' } : a))
+      );
+    } else {
+      const newAsg: RoleAssignment = {
+        id: generateUniqueId('asg'),
+        programId,
+        roleId,
+        memberId,
+        status: 'pending',
+        remindersSent: [],
+      };
+
+      await supabase.from('assignments').insert([newAsg]);
+      setAssignments((prev) => [...prev, newAsg]);
+    }
+
+    showToast('Member assigned.');
+  };
+
+  const autoFillRoster = async (programId: string) => {
+    const unassignedRoles = roles.filter(
+      (r) => !assignments.some((a) => a.programId === programId && a.roleId === r.id && a.memberId)
+    );
+
+    const newAssignments: RoleAssignment[] = [];
+
+    for (const role of unassignedRoles) {
+      const suitableMem = members.find((m) => m.primaryRole === role.id || m.secondaryRoles?.includes(role.id));
+      if (suitableMem) {
+        newAssignments.push({
+          id: generateUniqueId('asg'),
+          programId,
+          roleId: role.id,
+          memberId: suitableMem.id,
+          status: 'pending',
+          remindersSent: [],
+        });
+      }
+    }
+
+    if (newAssignments.length > 0) {
+      await supabase.from('assignments').insert(newAssignments);
+      setAssignments((prev) => [...prev, ...newAssignments]);
+      showToast(`Auto-filled ${newAssignments.length} roles.`);
+    } else {
+      showToast('No matching members found for unassigned roles.');
+    }
+  };
+
+  const removeAssignment = async (assignmentId: string) => {
+    await supabase.from('assignments').delete().eq('id', assignmentId);
+    setAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
+    showToast('Assignment removed.');
+  };
+
+  const replaceAssignment = async (assignmentId: string, newMemberId: string) => {
+    await supabase
+      .from('assignments')
+      .update({ memberId: newMemberId, status: 'pending', confirmedAt: null, declineReason: null })
+      .eq('id', assignmentId);
+
+    setAssignments((prev) =>
+      prev.map((a) => (a.id === assignmentId ? { ...a, memberId: newMemberId, status: 'pending' } : a))
+    );
+
+    showToast('Replacement assigned.');
+  };
+
+  const triggerManualReminder = async (programId: string, intervalLabel = 'manual') => {
+    showToast(`Reminders sent for program (${intervalLabel}).`);
+  };
+
+  // Program Management
+  const createProgram = async (newProg: Omit<ProgramService, 'id'>) => {
+    const id = generateUniqueId('prog');
+    const created: ProgramService = { ...newProg, id };
+
+    await supabase.from('programs').insert([created]);
+    setPrograms((prev) => [...prev, created]);
+    showToast(`Program "${newProg.title}" created.`);
+    return id;
+  };
+
+  const updateProgram = async (updatedProg: ProgramService) => {
+    await supabase.from('programs').update(updatedProg).eq('id', updatedProg.id);
+    setPrograms((prev) => prev.map((p) => (p.id === updatedProg.id ? updatedProg : p)));
+    showToast('Program updated.');
+  };
+
+  const deleteProgram = async (programId: string) => {
+    await supabase.from('programs').delete().eq('id', programId);
+    await supabase.from('assignments').delete().eq('programId', programId);
+
+    setPrograms((prev) => prev.filter((p) => p.id !== programId));
+    setAssignments((prev) => prev.filter((a) => a.programId !== programId));
+    showToast('Program deleted.');
+  };
+
+  // Members Management with Auto-Account Creation & WhatsApp Dispatch
+  const addMember = async (member: Omit<TeamMember, 'id'>) => {
+    const id = generateUniqueId('mem');
+    const accountId = generateUniqueId('acc');
+    const cleanEmail = member.email.trim().toLowerCase();
+    const defaultPassword = 'Password123!';
+
+    const createdMember: TeamMember = {
+      ...member,
+      id,
+      email: cleanEmail,
+      isLeader: Boolean(member.isLeader),
+      secondaryRoles: member.secondaryRoles || [],
+      availability: member.availability || [],
+    };
+
+    // 1. Insert Member Profile into Supabase
+    const { error: memErr } = await supabase.from('members').insert([createdMember]);
+    if (memErr) {
+      console.error('Supabase Member Insert Error:', memErr.message);
+      showToast(`Database Error: ${memErr.message}`);
+      return id;
+    }
+
+    // 2. Automatically Create Login Account in Supabase
+    const createdAccount: UserAccount = {
+      id: accountId,
+      email: cleanEmail,
+      memberId: id,
+      allowedPortals: ['team'],
+      defaultPortal: 'team',
+      password: defaultPassword,
+      hasSetPassword: false,
+      passwordSetAt: new Date().toISOString(),
+    };
+
+    const { error: accErr } = await supabase.from('accounts').insert([createdAccount]);
+    if (accErr) {
+      console.error('Supabase Account Creation Error:', accErr.message);
+    } else {
+      setAccounts((prev) => [...prev, createdAccount]);
+    }
+
+    setMembers((prev) => [...prev, createdMember]);
+    showToast(`Added member ${member.name}! Triggering WhatsApp credentials message...`);
+
+    // 3. Dispatch WhatsApp Login Credentials Message
+    if (member.phone) {
+      const { whatsappUrl } = buildNewMemberWhatsAppMessage({
+        memberName: member.name,
+        memberPhone: member.phone,
+        email: cleanEmail,
+        tempPassword: defaultPassword,
+      });
+
+      if (typeof window !== 'undefined') {
+        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+      }
+    }
+
+    return id;
+  };
+
+  const updateMember = async (updatedMember: TeamMember) => {
+    await supabase.from('members').update(updatedMember).eq('id', updatedMember.id);
+    setMembers((prev) => prev.map((m) => (m.id === updatedMember.id ? updatedMember : m)));
+    showToast('Member profile updated.');
+  };
+
+  const deleteMember = async (memberId: string) => {
+    await supabase.from('members').delete().eq('id', memberId);
+    await supabase.from('accounts').delete().eq('memberId', memberId);
+
+    setMembers((prev) => prev.filter((m) => m.id !== memberId));
+    setAccounts((prev) => prev.filter((a) => a.memberId !== memberId));
+    showToast('Member deleted.');
+  };
+
+  // Announcements & Verse
+  const addAnnouncement = async (announcement: Omit<Announcement, 'id'>) => {
+    const id = generateUniqueId('ann');
+    const created: Announcement = { ...announcement, id };
+
+    await supabase.from('announcements').insert([created]);
+    setAnnouncements((prev) => [created, ...prev]);
+    showToast('Announcement posted.');
+  };
+
+  const deleteAnnouncement = async (id: string) => {
+    await supabase.from('announcements').delete().eq('id', id);
+    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+    showToast('Announcement removed.');
+  };
+
+  const updateVerse = async (newVerse: VerseOfTheDay) => {
+    await supabase.from('verse').upsert([newVerse]);
+    setVerse(newVerse);
+    showToast('Daily verse updated.');
+  };
+
+  const updateReminderConfig = async (config: ReminderConfig) => {
+    await supabase.from('reminder_config').upsert([config]);
+    setReminderConfig(config);
+    showToast('Reminder configuration saved.');
+  };
+
+  const resetToDefaults = async () => {
+    setRoles(INITIAL_ROLES);
+    setMembers(INITIAL_MEMBERS);
+    setAccounts(INITIAL_ACCOUNTS);
+    setPrograms(INITIAL_PROGRAMS);
+    setAssignments(INITIAL_ASSIGNMENTS);
+    setAnnouncements(INITIAL_ANNOUNCEMENTS);
+    setVerse(INITIAL_VERSE);
+    setReminderConfig(INITIAL_REMINDER_CONFIG);
+    setAuditLogs(INITIAL_AUDIT_LOGS);
+
+    await supabase.from('roles').upsert(INITIAL_ROLES);
+    await supabase.from('members').upsert(INITIAL_MEMBERS);
+    await supabase.from('accounts').upsert(INITIAL_ACCOUNTS);
+    await supabase.from('programs').upsert(INITIAL_PROGRAMS);
+    await supabase.from('assignments').upsert(INITIAL_ASSIGNMENTS);
+    await supabase.from('announcements').upsert(INITIAL_ANNOUNCEMENTS);
+
+    showToast('Application reset to factory defaults.');
+  };
+
+  return (
+    <AppContext.Provider
+      value={{
+        isLoggedIn,
+        isSuperAdmin,
+        isLeader,
+        currentAccount,
+        currentMember,
+        activePortal,
+        availableAccounts: accounts,
+        switchAccount,
+        switchPortal,
+        logout,
+        updateAccountPrivileges,
+        toggleMemberLeadership,
+        checkEmailStatus,
+        registerNewMember,
+        setupFirstTimePassword,
+        loginWithPassword,
+        changePassword,
+        resetPasswordForMember,
+        whatsAppModalState,
+        closeWhatsAppModal,
+        openWhatsAppModalForAssignment,
+        roles,
+        members,
+        programs,
+        assignments,
+        announcements,
+        verse,
+        reminderConfig,
+        auditLogs,
+        confirmAttendance,
+        declineAttendance,
+        assignMemberToRole,
+        autoFillRoster,
+        removeAssignment,
+        replaceAssignment,
+        triggerManualReminder,
+        inactivityLoggedOut,
+        clearInactivityFlag,
+        inactivityTimeoutMinutes,
+        setInactivityTimeoutMinutes,
+        resetInactivityTimer,
+        showInactivityWarning,
+        inactivitySecondsRemaining,
+        pending24HourDuties,
+        automatedReminderModalOpen,
+        setAutomatedReminderModalOpen,
+        trigger24HourScan,
+        directConfirmData,
+        closeDirectConfirmModal,
+        createProgram,
+        updateProgram,
+        deleteProgram,
+        addMember,
+        updateMember,
+        deleteMember,
+        addAnnouncement,
+        deleteAnnouncement,
+        updateVerse,
+        updateReminderConfig,
+        resetToDefaults,
+        toastMessage,
+        showToast,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+  return context;
+};
