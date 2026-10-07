@@ -25,7 +25,10 @@ import {
   INITIAL_REMINDER_CONFIG,
   INITIAL_AUDIT_LOGS,
 } from '../data/mockData';
-import { buildAssignmentWhatsAppMessage } from '../utils/whatsapp';
+import {
+  buildAssignmentWhatsAppMessage,
+  buildNewMemberWhatsAppMessage,
+} from '../utils/whatsapp';
 
 export const SUPER_ADMIN_EMAIL = 'bernardoobuobi@gmail.com';
 
@@ -634,136 +637,4 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     sessionStorage.setItem('mediaserve_account_id', newAccountId);
 
     await logAction(data.name, 'New Team Member Registration', `Registered via onboarding form as ${roles.find((r) => r.id === data.primaryRole)?.name || 'Media Member'}.`, 'system');
-    showToast(`Welcome to AKWC Media, ${data.name}! Your account is active.`);
-    return { success: true, message: `Account created successfully! Welcome to the team.` };
-  };
-
-  const switchPortal = (portal: PortalType) => {
-    if (portal === 'admin' && !isSuperAdmin) {
-      showToast('Access Denied: Only the Super Admin (bernardoobuobi@gmail.com) can access the Admin Portal.');
-      return;
-    }
-
-    const userHasLeadership =
-      isSuperAdmin ||
-      currentAccount.allowedPortals.includes('leadership') ||
-      Boolean(currentMember?.isLeader);
-
-    if (portal === 'leadership' && !userHasLeadership) {
-      showToast('Access Denied: You do not have Leadership privileges.');
-      return;
-    }
-
-    setActivePortal(portal);
-  };
-
-  const updateAccountPrivileges = async (
-    targetAccountId: string,
-    newAllowedPortals: PortalType[],
-    defaultPortal?: PortalType
-  ): Promise<{ success: boolean; message: string }> => {
-    if (!isSuperAdmin) {
-      const msg = 'Security violation: Only the Super Admin (bernardoobuobi@gmail.com) is authorized to assign admin or leader privileges.';
-      showToast(msg);
-      return { success: false, message: msg };
-    }
-
-    const targetAcc = accounts.find((a) => a.id === targetAccountId);
-    if (!targetAcc) return { success: false, message: 'Account not found.' };
-
-    const sanitizedPortals: PortalType[] = newAllowedPortals.filter((p) => {
-      if (p === 'admin') return targetAcc.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
-      return true;
-    });
-
-    if (!sanitizedPortals.includes('team')) sanitizedPortals.push('team');
-    const isGrantedLeadership = sanitizedPortals.includes('leadership');
-
-    const def = defaultPortal || (isGrantedLeadership ? 'leadership' : 'team');
-
-    await supabase
-      .from('accounts')
-      .update({ allowedPortals: sanitizedPortals, defaultPortal: def })
-      .eq('id', targetAccountId);
-
-    await supabase
-      .from('members')
-      .update({ isLeader: isGrantedLeadership })
-      .eq('id', targetAcc.memberId);
-
-    setAccounts((prev) =>
-      prev.map((a) => (a.id === targetAccountId ? { ...a, allowedPortals: sanitizedPortals, defaultPortal: def } : a))
-    );
-
-    const mem = members.find((m) => m.id === targetAcc.memberId);
-    await logAction(
-      currentMember.name,
-      'Updated Team Member Privileges',
-      `Super Admin updated permissions for ${mem?.name || targetAcc.email}. Leader status: ${isGrantedLeadership ? 'Granted' : 'Revoked'}.`,
-      'system'
-    );
-
-    showToast(`Updated privileges for ${mem?.name || targetAcc.email}`);
-    return { success: true, message: 'Privileges updated successfully.' };
-  };
-
-  const toggleMemberLeadership = async (
-    memberId: string,
-    forceStatus?: boolean
-  ): Promise<{ success: boolean; message: string }> => {
-    const mem = members.find((m) => m.id === memberId);
-    if (!mem) return { success: false, message: 'Member not found.' };
-
-    const newIsLeader = forceStatus !== undefined ? forceStatus : !Boolean(mem.isLeader);
-
-    await supabase.from('members').update({ isLeader: newIsLeader }).eq('id', memberId);
-
-    setMembers((prev) =>
-      prev.map((m) => (m.id === memberId ? { ...m, isLeader: newIsLeader } : m))
-    );
-
-    const targetAcc = accounts.find((a) => a.memberId === memberId);
-    if (targetAcc) {
-      const currentAllowed = targetAcc.allowedPortals || ['team'];
-      const newAllowed = newIsLeader
-        ? Array.from(new Set([...currentAllowed, 'leadership', 'team']))
-        : currentAllowed.filter((p) => p !== 'leadership');
-
-      await supabase
-        .from('accounts')
-        .update({
-          allowedPortals: newAllowed,
-          defaultPortal: newIsLeader ? 'leadership' : 'team',
-        })
-        .eq('id', targetAcc.id);
-
-      setAccounts((prev) =>
-        prev.map((a) =>
-          a.id === targetAcc.id
-            ? { ...a, allowedPortals: newAllowed, defaultPortal: newIsLeader ? 'leadership' : 'team' }
-            : a
-        )
-      );
-    }
-
-    const msg = newIsLeader ? `${mem.name} is now a Media Leader!` : `Revoked leadership privileges for ${mem.name}.`;
-    showToast(msg);
-    return { success: true, message: msg };
-  };
-
-  const setupFirstTimePassword = async (email: string, newPassword: string) => {
-    const cleanEmail = email.trim().toLowerCase();
-    const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
-    if (!acc) return { success: false, message: 'Email not registered.' };
-
-    await supabase
-      .from('accounts')
-      .update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() })
-      .eq('id', acc.id);
-
-    setAccounts((prev) =>
-      prev.map((a) => (a.id === acc.id ? { ...a, password: newPassword, hasSetPassword: true } : a))
-    );
-
-    setCurrentAccountId(acc.id);
-    setIsLoggedIn
+    showToast(`Welcome to AKWC Media, ${data.
