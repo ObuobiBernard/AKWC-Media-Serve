@@ -150,6 +150,48 @@ God bless your heart of service!
   };
 }
 
+export interface WhatsAppNewMemberAccountParams {
+  memberName: string;
+  memberPhone: string;
+  email: string;
+  tempPassword?: string;
+  appUrl?: string;
+}
+
+export function buildNewMemberWhatsAppMessage(params: WhatsAppNewMemberAccountParams): {
+  phone: string;
+  message: string;
+  whatsappUrl: string;
+} {
+  const formattedPhone = formatPhoneForWhatsApp(params.memberPhone);
+  const baseUrl = getLiveAppBaseUrl(params.appUrl);
+
+  const message = 
+`*COP AKWETEYMAN WORSHIP CENTER (AKWC)*
+*MEDIA MINISTRY ACCOUNT CREATED* 🎉📱
+
+Shalom *${params.memberName}*,
+Welcome to the AKWC Media Team! An account has been created for you on the MediaServe platform.
+
+🔑 *Your Login Credentials:*
+🌐 *Portal URL:* ${baseUrl}
+📧 *Email:* ${params.email}
+🔒 *Temporary Password:* *${params.tempPassword || 'Password123!'}*
+
+Please log in to view upcoming rosters, set your availability, and confirm duty assignments. Once logged in, you can update your password under your settings.
+
+_"Serve the Lord with gladness!" — Psalm 100:2_
+— *AKWC Media Production Leadership*`;
+
+  const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
+
+  return {
+    phone: formattedPhone,
+    message,
+    whatsappUrl,
+  };
+}
+
 export function openWhatsAppNotification(whatsappUrl: string) {
   if (typeof window !== 'undefined') {
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
