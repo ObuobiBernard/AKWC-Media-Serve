@@ -560,22 +560,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const checkEmailStatus = (email: string) => {
     const cleanEmail = email.trim().toLowerCase();
+    
+    // Check both accounts and members state arrays
     const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
-    if (!acc) {
+    const mem = members.find((m) => m.email.toLowerCase() === cleanEmail);
+
+    if (!acc && !mem) {
       return { status: 'not_found' as const };
     }
-    const mem = members.find((m) => m.id === acc.memberId);
+
     const primaryRole = roles.find((r) => r.id === mem?.primaryRole);
-    if (!acc.hasSetPassword) {
+
+    if (acc && acc.hasSetPassword) {
       return {
-        status: 'needs_password' as const,
+        status: 'has_password' as const,
         memberName: mem?.name || acc.email,
         primaryRoleName: primaryRole?.name,
       };
     }
+
     return {
-      status: 'has_password' as const,
-      memberName: mem?.name || acc.email,
+      status: 'needs_password' as const,
+      memberName: mem?.name || acc?.email || cleanEmail,
       primaryRoleName: primaryRole?.name,
     };
   };
@@ -992,7 +998,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Program deleted.');
   };
 
-  // Members Management with Auto-Account Creation & WhatsApp Dispatch
+  // Members Management with Auto-Account Creation & Immediate State Sync
   const addMember = async (member: Omit<TeamMember, 'id'>) => {
     const id = generateUniqueId('mem');
     const accountId = generateUniqueId('acc');
@@ -1016,7 +1022,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return id;
     }
 
-    // 2. Automatically Create Login Account in Supabase
+    // 2. Automatically Create User Account for Login
     const createdAccount: UserAccount = {
       id: accountId,
       email: cleanEmail,
@@ -1024,21 +1030,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       allowedPortals: ['team'],
       defaultPortal: 'team',
       password: defaultPassword,
-      hasSetPassword: false,
+      hasSetPassword: true,
       passwordSetAt: new Date().toISOString(),
     };
 
     const { error: accErr } = await supabase.from('accounts').insert([createdAccount]);
     if (accErr) {
       console.error('Supabase Account Creation Error:', accErr.message);
-    } else {
-      setAccounts((prev) => [...prev, createdAccount]);
     }
 
+    // 3. Immediately Update Local React State so login works without full refresh
     setMembers((prev) => [...prev, createdMember]);
-    showToast(`Added member ${member.name}! Triggering WhatsApp credentials message...`);
+    setAccounts((prev) => [...prev, createdAccount]);
 
-    // 3. Dispatch WhatsApp Login Credentials Message
+    showToast(`Added member ${member.name}! Opening WhatsApp...`);
+
+    // 4. Dispatch WhatsApp Credentials Message
     if (member.phone) {
       const { whatsappUrl } = buildNewMemberWhatsAppMessage({
         memberName: member.name,
