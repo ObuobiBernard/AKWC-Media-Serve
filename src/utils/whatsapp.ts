@@ -3,15 +3,12 @@
  */
 
 export function formatPhoneForWhatsApp(rawPhone: string): string {
-  // Strip non-digit characters
   const digits = rawPhone.replace(/\D/g, '');
 
-  // If starts with 0 (e.g. 0543515464), replace with Ghana country code 233
   if (digits.startsWith('0') && digits.length === 10) {
     return '233' + digits.substring(1);
   }
 
-  // If already starts with 233
   if (digits.startsWith('233')) {
     return digits;
   }
@@ -22,18 +19,19 @@ export function formatPhoneForWhatsApp(rawPhone: string): string {
 export const SHARED_PRODUCTION_URL = 'https://ais-pre-z3xlqsfzebdajhhhc4glht-564557384915.europe-west3.run.app';
 
 export function getLiveAppBaseUrl(overrideUrl?: string): string {
+  let url = SHARED_PRODUCTION_URL;
+
   if (overrideUrl && !overrideUrl.includes('github.io') && !overrideUrl.includes('localhost')) {
-    return overrideUrl;
+    url = overrideUrl;
+  } else if (typeof window !== 'undefined') {
+    const origin = window.location.origin;
+    if (!origin.includes('ais-dev') && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+      url = origin;
+    }
   }
-  if (typeof window === 'undefined') {
-    return SHARED_PRODUCTION_URL;
-  }
-  const origin = window.location.origin;
-  // If in dev environment or localhost, use the publicly accessible production URL
-  if (origin.includes('ais-dev') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
-    return SHARED_PRODUCTION_URL;
-  }
-  return origin;
+
+  // Remove trailing slash to prevent double slashes in generated query URLs
+  return url.replace(/\/+$/, '');
 }
 
 export interface WhatsAppAssignmentNotificationParams {
@@ -86,12 +84,7 @@ God bless you for your dedicated service!
 
   const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
 
-  return {
-    phone: formattedPhone,
-    message,
-    whatsappUrl,
-    confirmUrl,
-  };
+  return { phone: formattedPhone, message, whatsappUrl, confirmUrl };
 }
 
 export interface WhatsApp24HourReminderParams {
@@ -133,7 +126,7 @@ Your assigned media ministry duty is coming up within the next *24 hours* and yo
 ⏰ *Call Time:* *${params.callTime}* (Service: ${params.startTime} - ${params.endTime})
 📍 *Station:* ${params.station}
 
-Tap your personal link below to *Confirm your arrival* (or leave an arrival note if you'll be slightly delayed):
+Tap your personal link below to *Confirm your arrival*:
 👉 ${confirmUrl}
 
 _Kindly respond promptly so the production director can finalize station coverage._
@@ -142,12 +135,7 @@ God bless your heart of service!
 
   const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
 
-  return {
-    phone: formattedPhone,
-    message,
-    whatsappUrl,
-    confirmUrl,
-  };
+  return { phone: formattedPhone, message, whatsappUrl, confirmUrl };
 }
 
 export interface WhatsAppNewMemberAccountParams {
@@ -178,18 +166,14 @@ Welcome to the AKWC Media Team! An account has been created for you on the Media
 📧 *Email:* ${params.email}
 🔒 *Temporary Password:* *${params.tempPassword || 'Password123!'}*
 
-Please log in to view upcoming rosters, set your availability, and confirm duty assignments. Once logged in, you can update your password under your settings.
+Please log in to view upcoming rosters, set your availability, and confirm duty assignments. Once logged in, you can update your password in settings.
 
 _"Serve the Lord with gladness!" — Psalm 100:2_
 — *AKWC Media Production Leadership*`;
 
   const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
 
-  return {
-    phone: formattedPhone,
-    message,
-    whatsappUrl,
-  };
+  return { phone: formattedPhone, message, whatsappUrl };
 }
 
 export function openWhatsAppNotification(whatsappUrl: string) {
