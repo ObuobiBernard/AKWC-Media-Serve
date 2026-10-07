@@ -115,7 +115,7 @@ export const LoginPage: React.FC = () => {
         return;
       }
 
-      const const res = await setupFirstTimePassword(clean, newPassword);
+      const res = await setupFirstTimePassword(clean, newPassword);
       if (res.success) {
         setAuthSuccess(res.message);
       } else {
