@@ -56,7 +56,7 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
   const recognizedMember = members.find((m) => m.id === selectedFirstTimeAcc?.memberId);
   const recognizedRole = roles.find((r) => r.id === recognizedMember?.primaryRole);
 
-  const handleFirstTimeSubmit = (e: React.FormEvent) => {
+  const handleFirstTimeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSetupError('');
     setSetupSuccess('');
@@ -71,7 +71,8 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
       return;
     }
 
-    const res = setupFirstTimePassword(firstTimeEmail, newPassword);
+    const res = await setupFirstTimePassword(firstTimeEmail, newPassword);
+
     if (res.success) {
       setSetupSuccess(res.message);
       setNewPassword('');
@@ -84,11 +85,12 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
     }
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
-    const res = loginWithPassword(loginEmail, loginPassword);
+    const res = await loginWithPassword(loginEmail, loginPassword);
+
     if (res.success) {
       onClose();
     } else if (res.requiresSetup) {
@@ -210,57 +212,60 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-slate-400">
-                        Station: {recognizedRole?.name || recognizedMember.primaryRole} · Phone: {recognizedMember.phone}
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        {recognizedRole?.name || 'Media Team Member'}
                       </div>
                     </div>
                   </div>
-                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
-                    <Check className="w-3.5 h-3.5" /> Verified on Sheet
-                  </span>
+
+                  <div className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" />
+                    Registered
+                  </div>
                 </div>
               ) : (
-                <div className="p-3 bg-rose-950/30 border border-rose-900/40 rounded-xl flex items-center gap-2 text-rose-300 text-xs">
-                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                  <span>Email not found in AKWC spreadsheet roster. Please check spelling.</span>
+                <div className="p-3 bg-rose-950/30 border border-rose-900/40 rounded-xl flex items-center gap-2 text-rose-300">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>That email is not currently linked to a Media Team member.</span>
                 </div>
               )}
 
-              {/* Create Password */}
-              <div className="space-y-3 pt-1">
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">
-                    Create New Password (Min 6 Characters)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="Enter a secure password..."
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-3 pr-9 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">
-                    Confirm Password
-                  </label>
+              <div>
+                <label className="block text-slate-300 font-medium mb-1.5">
+                  Create Your Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="Re-enter password..."
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Minimum 6 characters"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-10 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1.5">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+                    placeholder="Re-enter your password"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-10 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
                     required
                   />
                 </div>
@@ -274,62 +279,69 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
 
               {setupSuccess && (
                 <div className="p-2.5 bg-emerald-950/40 border border-emerald-900/50 rounded-lg text-emerald-300 text-xs flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span>{setupSuccess}</span>
+                  <Check className="w-4 h-4" />
+                  {setupSuccess}
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={!recognizedMember}
-                className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
-                  recognizedMember
-                    ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20'
-                    : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                }`}
-              >
-                <Lock className="w-4 h-4" />
-                <span>Save Password & Activate My Account</span>
-              </button>
+              <div className="flex items-center justify-end pt-1">
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-colors"
+                >
+                  Activate Account
+                </button>
+              </div>
             </form>
           </div>
         )}
 
-        {/* TAB 2: SIGN IN WITH EXISTING PASSWORD */}
+        {/* TAB 2: LOGIN */}
         {activeTab === 'login' && (
           <div className="space-y-4">
-            <p className="text-xs text-slate-400">
-              Sign in with your AKWC Media email and the personal password you set.
-            </p>
+            <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl">
+              <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                <KeyRound className="w-4 h-4 text-amber-400" />
+                <span>Sign In to MediaServe</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Enter the email address and password associated with your AKWC MediaServe account.
+              </p>
+            </div>
 
             <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block text-slate-300 font-medium mb-1">Registered Email Address</label>
+                <label className="block text-slate-300 font-medium mb-1.5">
+                  Email Address
+                </label>
                 <input
                   type="email"
-                  placeholder="e.g. osei397@gmail.com"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="you@example.com"
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-slate-300 font-medium mb-1">Password</label>
+                <label className="block text-slate-300 font-medium mb-1.5">
+                  Password
+                </label>
                 <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <input
                     type={showLoginPassword ? 'text' : 'password'}
-                    placeholder="••••••••••••"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-3 pr-9 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+                    placeholder="Your password"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-10 py-2 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
                     required
                   />
                   <button
                     type="button"
-                    onClick={() => setShowLoginPassword(!showLoginPassword)}
-                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
+                    onClick={() => setShowLoginPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
                   >
                     {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
