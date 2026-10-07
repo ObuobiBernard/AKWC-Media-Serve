@@ -93,7 +93,7 @@ export const LoginPage: React.FC = () => {
   };
 
   // Sign In / First-time Password submit
-  const handleSignInSubmit = (e: React.FormEvent) => {
+  const handleSignInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
     setAuthSuccess('');
@@ -115,7 +115,7 @@ export const LoginPage: React.FC = () => {
         return;
       }
 
-      const res = setupFirstTimePassword(clean, newPassword);
+      const const res = await setupFirstTimePassword(clean, newPassword);
       if (res.success) {
         setAuthSuccess(res.message);
       } else {
@@ -127,7 +127,7 @@ export const LoginPage: React.FC = () => {
         return;
       }
 
-      const res = loginWithPassword(clean, password);
+      const res = await loginWithPassword(clean, password);
       if (res.success) {
         setAuthSuccess(res.message);
       } else {
@@ -137,7 +137,7 @@ export const LoginPage: React.FC = () => {
   };
 
   // Registration Submit
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError('');
 
@@ -189,7 +189,7 @@ export const LoginPage: React.FC = () => {
       }
     }
 
-    const res = registerNewMember(regData);
+    const res = await registerNewMember(regData);
     if (!res.success) {
       setRegError(res.message);
     }
