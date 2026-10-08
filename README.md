@@ -7,7 +7,7 @@
 ## 👨‍💻 Creator & Lead Developer
 
 <div align="center">
-  <img src="https://github.com/bernardoobuobi.png" width="90" height="90" style="border-radius: 50%; border: 2px solid #f59e0b;" alt="Bernard Owusu Obuobi" />
+  <img src="public/cropped-passport pic.png" width="90" height="90" style="border-radius: 50%; border: 2px solid #f59e0b;" alt="Bernard Owusu Obuobi" />
   <h3 style="margin: 10px 0 0 0; color: #ffffff;">Bernard Owusu Obuobi</h3>
   <p style="color: #94a3b8; font-size: 14px; margin: 4px 0;">Lead Architect & Developer</p>
 </div>
