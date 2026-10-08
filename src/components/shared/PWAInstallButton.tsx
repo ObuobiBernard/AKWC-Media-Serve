@@ -17,7 +17,7 @@ export const PWAInstallButton: React.FC = () => {
       {isInstallable && (
         <button
           onClick={install}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-sm transition-all"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
           title="Install MediaServe app on your phone"
         >
           <Download className="w-3.5 h-3.5" />
@@ -29,7 +29,7 @@ export const PWAInstallButton: React.FC = () => {
       {isIOS && (
         <button
           onClick={() => setShowIOSGuide(true)}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/40 text-amber-300 text-xs font-medium rounded-xl transition-all"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/40 text-amber-300 text-xs font-medium rounded-xl transition-all cursor-pointer"
           title="Install on iPhone / iPad"
         >
           <Smartphone className="w-3.5 h-3.5 text-amber-400" />
@@ -41,7 +41,7 @@ export const PWAInstallButton: React.FC = () => {
       {!isInstallable && !isIOS && (
         <button
           onClick={() => setShowIOSGuide(true)}
-          className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-medium rounded-xl transition-colors"
+          className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-medium rounded-xl transition-colors cursor-pointer"
           title="Install as Android / iOS App"
         >
           <Smartphone className="w-3.5 h-3.5 text-amber-400" />
@@ -65,7 +65,7 @@ export const PWAInstallButton: React.FC = () => {
               </div>
               <button
                 onClick={() => setShowIOSGuide(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -111,7 +111,7 @@ export const PWAInstallButton: React.FC = () => {
 
             <button
               onClick={() => setShowIOSGuide(false)}
-              className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-colors shadow-sm"
+              className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-colors shadow-sm cursor-pointer"
             >
               Got It
             </button>
