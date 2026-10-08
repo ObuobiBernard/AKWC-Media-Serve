@@ -56,20 +56,6 @@ export const AdminPortal: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'members' | 'roles' | 'privileges' | 'excel' | 'config' | 'announcements' | 'audit'>('members');
 
-  // Strict Security Guard: Only bernardoobuobi@gmail.com can access Admin Portal
-  if (!isSuperAdmin) {
-    return (
-      <div className="p-8 bg-slate-900 border border-slate-800 rounded-2xl text-center space-y-4 max-w-lg mx-auto my-12 animate-in fade-in duration-200">
-        <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto shadow-lg shadow-rose-950">
-          <Shield className="w-7 h-7" />
-        </div>
-        <h2 className="text-lg font-bold text-white">Access Restricted to Super Admin</h2>
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Only the designated system administrator (<strong className="text-white font-mono">bernardoobuobi@gmail.com</strong>) has authorization to access the AKWC MediaServe Admin Console and manage team privileges.
-        </p>
-      </div>
-    );
-  }
 
   // Member Management State
   const [memberSearch, setMemberSearch] = useState('');
@@ -95,6 +81,22 @@ export const AdminPortal: React.FC = () => {
 
   // Leadership privilege toggle in member modal
   const [memIsLeader, setMemIsLeader] = useState(false);
+
+  // Strict Security Guard: Only bernardoobuobi@gmail.com can access Admin Portal
+  if (!isSuperAdmin) {
+    return (
+      <div className="p-8 bg-slate-900 border border-slate-800 rounded-2xl text-center space-y-4 max-w-lg mx-auto my-12 animate-in fade-in duration-200">
+        <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto shadow-lg shadow-rose-950">
+          <Shield className="w-7 h-7" />
+        </div>
+        <h2 className="text-lg font-bold text-white">Access Restricted to Super Admin</h2>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Only the designated system administrator (<strong className="text-white font-mono">bernardoobuobi@gmail.com</strong>) has authorization to access the AKWC MediaServe Admin Console and manage team privileges.
+        </p>
+      </div>
+    );
+  }
+
 
   // Filtered members list
   const filteredMembers = members.filter((m) => {
@@ -133,7 +135,7 @@ export const AdminPortal: React.FC = () => {
     setEditMemberModalOpen(true);
   };
 
-  const handleSaveMember = (e: React.FormEvent) => {
+  const handleSaveMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!memName || !memEmail) return;
 
@@ -150,7 +152,7 @@ export const AdminPortal: React.FC = () => {
       });
       toggleMemberLeadership(editingMember.id, memIsLeader);
     } else {
-      const newId = addMember({
+      const newId = await addMember({
         name: memName,
         email: memEmail,
         phone: memPhone,

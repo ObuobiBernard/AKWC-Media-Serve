@@ -257,7 +257,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       primaryRole: '',
       secondaryRoles: [],
       skillLevel: 'Beginner',
-      availability: [],
+      availability: 'Flexible',
       status: 'active',
       joinedDate: new Date().toISOString().split('T')[0],
     };

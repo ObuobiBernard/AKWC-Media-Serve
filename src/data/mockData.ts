@@ -360,9 +360,7 @@ export const INITIAL_ACCOUNTS: UserAccount[] = [
     memberId: 'mem-bernard',
     allowedPortals: ['admin', 'leadership', 'team'],
     defaultPortal: 'admin',
-    hasSetPassword: true,
-    password: 'MediaServe2026!',
-    passwordSetAt: '2026-01-19T09:14:23Z',
+    hasSetPassword: false,
   },
   {
     id: 'acc-samuel-dwomoh',
