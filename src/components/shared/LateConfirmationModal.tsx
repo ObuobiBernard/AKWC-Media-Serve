@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ProgramService, MediaRole } from '../../types';
-import { X, Clock, CheckCircle2, AlertTriangle, MessageSquare } from 'lucide-react';
+import { X, Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 interface LateConfirmationModalProps {
   isOpen: boolean;
@@ -26,14 +26,14 @@ export const LateConfirmationModal: React.FC<LateConfirmationModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!arrivalComment.trim()) {
       setError('Please provide a brief reason or comment for leadership.');
       return;
     }
 
-    confirmAttendance(assignmentId, arrivalComment.trim(), estimatedArrivalTime.trim() || undefined);
+    await confirmAttendance(assignmentId, arrivalComment.trim(), estimatedArrivalTime.trim() || undefined);
     onClose();
   };
 
