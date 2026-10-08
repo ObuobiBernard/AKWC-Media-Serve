@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { openWhatsAppNotification } from '../../utils/whatsapp';
+import { openWhatsAppNotification, formatPhoneForWhatsApp } from '../../utils/whatsapp';
 import {
   X,
   Send,
@@ -9,9 +9,6 @@ import {
   MessageCircle,
   ExternalLink,
   Smartphone,
-  Calendar,
-  Clock,
-  MapPin,
   CheckCircle2,
 } from 'lucide-react';
 
@@ -23,6 +20,7 @@ export const WhatsAppNotificationModal: React.FC = () => {
   if (!whatsAppModalState) return null;
 
   const { member, role, program, whatsappUrl, messageText } = whatsAppModalState;
+  const formattedPhone = formatPhoneForWhatsApp(member.phone);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(messageText);
@@ -73,7 +71,7 @@ export const WhatsAppNotificationModal: React.FC = () => {
               <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
               <span>{member.name}</span>
             </div>
-            <span className="font-mono text-emerald-400 font-medium">{member.phone}</span>
+            <span className="font-mono text-emerald-400 font-medium">+{formattedPhone}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/60 text-[11px] text-slate-300">
@@ -103,7 +101,7 @@ export const WhatsAppNotificationModal: React.FC = () => {
         <div className="flex flex-col sm:flex-row items-center gap-2 pt-2 border-t border-slate-800">
           <button
             onClick={handleSend}
-            className="w-full sm:flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-emerald-950"
+            className="w-full sm:flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-emerald-950 cursor-pointer"
           >
             <Send className="w-4 h-4" />
             <span>{autoOpened ? 'Re-open WhatsApp' : 'Send via WhatsApp (wa.me)'}</span>
@@ -112,7 +110,7 @@ export const WhatsAppNotificationModal: React.FC = () => {
 
           <button
             onClick={handleCopy}
-            className="w-full sm:w-auto py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors border border-slate-700"
+            className="w-full sm:w-auto py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors border border-slate-700 cursor-pointer"
           >
             {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
             <span>{copied ? 'Copied' : 'Copy Text'}</span>
@@ -120,7 +118,7 @@ export const WhatsAppNotificationModal: React.FC = () => {
 
           <button
             onClick={closeWhatsAppModal}
-            className="w-full sm:w-auto py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-medium rounded-xl transition-colors"
+            className="w-full sm:w-auto py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-medium rounded-xl transition-colors cursor-pointer"
           >
             Dismiss
           </button>
