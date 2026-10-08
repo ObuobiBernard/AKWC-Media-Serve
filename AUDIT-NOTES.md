@@ -17,3 +17,9 @@ This package contains a first correction pass based on static source inspection.
 
 ## Verification status
 A production build and TypeScript check have **not** been verified in this environment because project dependencies were not available in the local package cache. Please install dependencies in your build environment and run `npm run lint` and `npm run build` before deploying.
+
+## Additional correction: deleted default programs returning
+
+- Updated `src/context/AppContext.tsx` so an empty `programs` table is treated as a valid empty list.
+- The app no longer automatically inserts `INITIAL_PROGRAMS` when the database contains zero programs. This prevents deleted programs from reappearing after refresh or Supabase realtime reloads.
+- Default sample programs will not automatically populate a genuinely empty database; create the required programs through the app, or use an explicitly implemented reset action if defaults are desired.

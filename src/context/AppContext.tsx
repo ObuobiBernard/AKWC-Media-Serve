@@ -205,8 +205,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!accErr && accountsData && accountsData.length > 0) setAccounts(accountsData);
       else { setAccounts(INITIAL_ACCOUNTS); await supabase.from('accounts').upsert(INITIAL_ACCOUNTS); }
 
-      if (!progErr && programsData && programsData.length > 0) setPrograms(programsData);
-      else { setPrograms(INITIAL_PROGRAMS); await supabase.from('programs').upsert(INITIAL_PROGRAMS); }
+      // An empty programs table is valid: the user may have deleted every program.
+      // Never reseed default programs automatically, or deleted programs will return
+      // on reload and after Supabase realtime refreshes.
+      if (progErr) {
+        console.error('Could not load programs from Supabase:', progErr.message);
+      } else {
+        setPrograms(programsData ?? []);
+      }
 
       if (!asgErr && assignmentsData && assignmentsData.length > 0) setAssignments(assignmentsData);
       else { setAssignments(INITIAL_ASSIGNMENTS); await supabase.from('assignments').upsert(INITIAL_ASSIGNMENTS); }
