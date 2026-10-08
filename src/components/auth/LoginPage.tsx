@@ -14,9 +14,6 @@ import {
   CheckCircle2,
   AlertCircle,
   ArrowRight,
-  Shield,
-  Layers,
-  ChevronDown,
   UserPlus,
   LogIn,
   Clock,
@@ -53,7 +50,7 @@ export const LoginPage: React.FC = () => {
     primaryRoleName?: string;
   } | null>(null);
 
-  // Registration form state (all spreadsheet questions)
+  // Registration form state
   const [regData, setRegData] = useState<RegisterMemberData>({
     name: '',
     email: '',
@@ -162,7 +159,6 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
-    // Client-side instant check for duplicate email or phone number
     const cleanEmail = regData.email.trim().toLowerCase();
     const normalizeDigits = (p: string) => {
       const digits = p.replace(/\D/g, '');
@@ -344,7 +340,6 @@ export const LoginPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Step 1: User hasn't clicked continue to check email yet */}
               {!emailChecked && (
                 <button
                   type="button"
@@ -356,10 +351,8 @@ export const LoginPage: React.FC = () => {
                 </button>
               )}
 
-              {/* Step 2: Email checked and recognized */}
               {emailChecked && emailStatus && (
                 <>
-                  {/* Case A: Member is in spreadsheet but has not set password yet */}
                   {emailStatus.status === 'needs_password' && (
                     <div className="space-y-4 pt-1 animate-in fade-in duration-200">
                       <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl text-xs text-amber-200 flex items-start gap-2.5">
@@ -427,7 +420,6 @@ export const LoginPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Case B: Member already has a set password */}
                   {emailStatus.status === 'has_password' && (
                     <div className="space-y-4 pt-1 animate-in fade-in duration-200">
                       <div className="flex items-center justify-between p-2.5 bg-slate-950 border border-slate-800 rounded-xl">
@@ -481,7 +473,6 @@ export const LoginPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Case C: Email not found on spreadsheet */}
                   {emailStatus.status === 'not_found' && (
                     <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl text-center space-y-3">
                       <div className="text-xs text-slate-300">
@@ -499,7 +490,6 @@ export const LoginPage: React.FC = () => {
                 </>
               )}
 
-              {/* Error & Success Messages */}
               {authError && (
                 <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
@@ -526,7 +516,6 @@ export const LoginPage: React.FC = () => {
                 </p>
               </div>
 
-              {/* Full Name */}
               <div>
                 <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
                   <User className="w-3.5 h-3.5 text-amber-400" />
@@ -542,7 +531,6 @@ export const LoginPage: React.FC = () => {
                 />
               </div>
 
-              {/* Email & Phone grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
@@ -574,7 +562,6 @@ export const LoginPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Gender */}
               <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-1.5">Gender *</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -595,7 +582,6 @@ export const LoginPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Primary Role / Department */}
               <div>
                 <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
                   <Video className="w-3.5 h-3.5 text-amber-400" />
@@ -614,7 +600,6 @@ export const LoginPage: React.FC = () => {
                 </select>
               </div>
 
-              {/* Secondary Roles */}
               <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-1">
                   Secondary Roles / Other Areas of Interest (Optional)
@@ -643,7 +628,6 @@ export const LoginPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Skill Level & Availability */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-semibold text-slate-300 block mb-1">
@@ -689,7 +673,6 @@ export const LoginPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Ministry Experience / Comments */}
               <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-1">
                   Additional Notes / Experience / Equipment Known (Optional)
@@ -703,7 +686,6 @@ export const LoginPage: React.FC = () => {
                 />
               </div>
 
-              {/* Password & Confirm */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div>
                   <label className="text-xs font-semibold text-slate-300 flex items-center gap-1 mb-1">
@@ -764,7 +746,6 @@ export const LoginPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Footer info */}
       <footer className="py-4 text-center text-xs text-slate-600">
         <div>MediaServe · Church of Pentecost Akweteyman Worship Center (AKWC)</div>
       </footer>
