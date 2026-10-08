@@ -205,9 +205,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!accErr && accountsData && accountsData.length > 0) setAccounts(accountsData);
       else { setAccounts(INITIAL_ACCOUNTS); await supabase.from('accounts').upsert(INITIAL_ACCOUNTS); }
 
-      // An empty programs table is valid: the user may have deleted every program.
-      // Never reseed default programs automatically, or deleted programs will return
-      // on reload and after Supabase realtime refreshes.
       if (progErr) {
         console.error('Could not load programs from Supabase:', progErr.message);
       } else {
@@ -270,7 +267,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isSuperAdmin = currentAccount?.email?.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase();
   
-  // Patron Role Privilege Check
   const isPatron =
     currentAccount?.allowedPortals?.includes('patron') ||
     currentAccount?.defaultPortal === 'patron';
@@ -836,20 +832,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createProgram = async (newProg: Omit<ProgramService, 'id'>): Promise<string> => {
     const id = generateUniqueId('prog');
     const program: ProgramService = { ...newProg, id };
-    await supabase.from('programs').insert([program]);
+    const { error } = await supabase.from('programs').insert([program]);
+    
+    if (error) {
+      console.error('Error saving program:', error.message);
+      showToast(`Database Error: ${error.message}`);
+      return '';
+    }
+    
     setPrograms((prev) => [program, ...prev]);
     showToast('Service created successfully!');
     return id;
   };
 
   const updateProgram = async (updatedProg: ProgramService) => {
-    await supabase.from('programs').update(updatedProg).eq('id', updatedProg.id);
+    const { error } = await supabase.from('programs').update(updatedProg).eq('id', updatedProg.id);
+    if (error) {
+      showToast(`Database Error: ${error.message}`);
+      return;
+    }
     setPrograms((prev) => prev.map((p) => (p.id === updatedProg.id ? updatedProg : p)));
     showToast('Service updated.');
   };
 
   const deleteProgram = async (programId: string) => {
-    await supabase.from('programs').delete().eq('id', programId);
+    const { error } = await supabase.from('programs').delete().eq('id', programId);
+    if (error) {
+      showToast(`Database Error: ${error.message}`);
+      return;
+    }
     await supabase.from('assignments').delete().eq('programId', programId);
     setPrograms((prev) => prev.filter((p) => p.id !== programId));
     setAssignments((prev) => prev.filter((a) => a.programId !== programId));
@@ -859,25 +870,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addMember = async (member: Omit<TeamMember, 'id'>): Promise<string> => {
     const id = generateUniqueId('mem');
     const newMember: TeamMember = { ...member, id };
-    await supabase.from('members').insert([newMember]);
+    const { error } = await supabase.from('members').insert([newMember]);
+    if (error) {
+      showToast(`Database Error: ${error.message}`);
+      return '';
+    }
     setMembers((prev) => [...prev, newMember]);
     showToast(`Added ${newMember.name} to roster.`);
     return id;
   };
 
   const updateMember = async (member: TeamMember) => {
-    await supabase.from('members').update(member).eq('id', member.id);
+    const { error } = await supabase.from('members').update(member).eq('id', member.id);
+    if (error) {
+      showToast(`Database Error: ${error.message}`);
+      return;
+    }
     setMembers((prev) => prev.map((m) => (m.id === member.id ? member : m)));
     showToast('Member details updated.');
   };
 
-  // Protected Member Deletion (Super Admin Only)
   const deleteMember = async (memberId: string) => {
     if (!isSuperAdmin) {
       showToast('Permission Denied: Only the Super Admin (bernardoobuobi@gmail.com) can delete team members.');
       return;
     }
-    await supabase.from('members').delete().eq('id', memberId);
+    const { error } = await supabase.from('members').delete().eq('id', memberId);
+    if (error) {
+      showToast(`Database Error: ${error.message}`);
+      return;
+    }
     await supabase.from('accounts').delete().eq('memberId', memberId);
 
     setMembers((prev) => prev.filter((m) => m.id !== memberId));
@@ -888,25 +910,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addAnnouncement = async (announcement: Omit<Announcement, 'id'>) => {
     const id = generateUniqueId('ann');
     const newAnn: Announcement = { ...announcement, id };
-    await supabase.from('announcements').insert([newAnn]);
+    const { error } = await supabase.from('announcements').insert([newAnn]);
+    if (error) {
+      showToast(`Database Error: ${error.message}`);
+      return;
+    }
     setAnnouncements((prev) => [newAnn, ...prev]);
     showToast('Announcement posted!');
   };
 
   const deleteAnnouncement = async (id: string) => {
-    await supabase.from('announcements').delete().eq('id', id);
+    const { error } = await supabase.from('announcements').delete().eq('id', id);
+    if (error) {
+      showToast(`Database Error: ${error.message}`);
+      return;
+    }
     setAnnouncements((prev) => prev.filter((a) => a.id !== id));
     showToast('Announcement removed.');
   };
 
   const updateVerse = async (newVerse: VerseOfTheDay) => {
-    await supabase.from('verse').upsert([newVerse]);
+    const { error } = await supabase.from('verse').upsert([newVerse]);
+    if (error) {
+      showToast(`Database Error: ${error.message}`);
+      return;
+    }
     setVerse(newVerse);
     showToast('Verse updated.');
   };
 
   const updateReminderConfig = async (config: ReminderConfig) => {
-    await supabase.from('reminder_config').upsert([config]);
+    const { error } = await supabase.from('reminder_config').upsert([config]);
+    if (error) {
+      showToast(`Database Error: ${error.message}`);
+      return;
+    }
     setReminderConfig(config);
     showToast('Reminder settings updated.');
   };
