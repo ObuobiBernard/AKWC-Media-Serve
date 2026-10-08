@@ -5,12 +5,17 @@
 ---
 
 ## 👨‍💻 Creator & Lead Developer
-This application was entirely designed, architected, and coded by **Bernard Owusu Obuobi**.
+
+<div align="center">
+  <img src="https://github.com/bernardoobuobi.png" width="90" height="90" style="border-radius: 50%; border: 2px solid #f59e0b;" alt="Bernard Owusu Obuobi" />
+  <h3 style="margin: 10px 0 0 0; color: #ffffff;">Bernard Owusu Obuobi</h3>
+  <p style="color: #94a3b8; font-size: 14px; margin: 4px 0;">Lead Architect & Developer</p>
+</div>
 
 ---
 
 ## 🚀 Core Workflows & Features
-* **End-to-End Workflow:** Create Service → Assign Roles → Remind Volunteers → Confirm Attendance → Monitor Live Roster.
+* **End-to-End Workflow:** Create Service $\rightarrow$ Assign Roles $\rightarrow$ Remind Volunteers $\rightarrow$ Confirm Attendance $\rightarrow$ Monitor Live Roster.
 * **Smart WhatsApp Dispatches:** Generates pre-formatted WhatsApp notification links with secure one-tap confirmation links for crew members.
 * **Role-Based Access Control (RBAC):**
   * **Super Admin:** Full administrative control over system data, member security credentials, and role privileges.
