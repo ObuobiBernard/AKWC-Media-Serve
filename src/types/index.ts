@@ -4,7 +4,7 @@ export type SkillLevel = 'Lead' | 'Senior' | 'Intermediate' | 'Apprentice';
 
 export type AssignmentStatus = 'confirmed' | 'pending' | 'declined';
 
-export type PortalType = 'admin' | 'leadership' | 'team';
+export type PortalType = 'team' | 'leadership' | 'admin' | 'patron';
 
 export interface MediaRole {
   id: string;
@@ -35,6 +35,7 @@ export interface TeamMember {
   blackoutDates?: string[]; // ISO date strings when member is unavailable
 }
 
+// Ensure UserAccount accepts 'patron' portal type
 export interface UserAccount {
   id: string;
   email: string;
