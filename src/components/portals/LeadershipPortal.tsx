@@ -1,813 +1,991 @@
-import React, { useState } from 'react';
-import { useApp } from '../../context/AppContext';
-import { ProgramService, RoleAssignment, MediaRole, TeamMember } from '../../types';
-import { WhatsAppReminderModal } from '../shared/WhatsAppReminderModal';
-import { CalendarSyncModal } from '../shared/CalendarSyncModal';
-import { ReplacementModal } from '../shared/ReplacementModal';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabase';
 import {
-  Calendar,
-  Clock,
-  UserCheck,
-  AlertTriangle,
-  Plus,
-  Send,
-  CalendarPlus,
-  Trash2,
-  CheckCircle2,
-  XCircle,
-  HelpCircle,
-  MessageSquare,
-  Sparkles,
-  Users,
-  RotateCcw,
-  Shield,
-} from 'lucide-react';
+  TeamMember,
+  MediaRole,
+  UserAccount,
+  ProgramService,
+  RoleAssignment,
+  Announcement,
+  VerseOfTheDay,
+  ReminderConfig,
+  AuditLog,
+  PortalType,
+  RegisterMemberData,
+  Pending24HourDuty,
+} from '../types';
+import {
+  INITIAL_ROLES,
+  INITIAL_MEMBERS,
+  INITIAL_ACCOUNTS,
+  INITIAL_PROGRAMS,
+  INITIAL_ASSIGNMENTS,
+  INITIAL_ANNOUNCEMENTS,
+  INITIAL_VERSE,
+  INITIAL_REMINDER_CONFIG,
+} from '../data/mockData';
+import {
+  buildAssignmentWhatsAppMessage,
+} from '../utils/whatsapp';
 
-export const LeadershipPortal: React.FC = () => {
-  const {
-    programs,
-    assignments,
-    roles,
-    members,
-    availableAccounts,
-    currentMember,
-    createProgram,
-    deleteProgram,
-    assignMemberToRole,
-    autoFillRoster,
-    removeAssignment,
-    triggerManualReminder,
-    pending24HourDuties,
-    setAutomatedReminderModalOpen,
-    trigger24HourScan,
-    showToast,
-  } = useApp();
+export const SUPER_ADMIN_EMAIL = 'bernardoobuobi@gmail.com';
 
-  const [selectedProgramId, setSelectedProgramId] = useState<string>(
-    programs[0]?.id || ''
-  );
+export interface WhatsAppNotificationModalState {
+  member: TeamMember;
+  role: MediaRole;
+  program: ProgramService;
+  whatsappUrl: string;
+  messageText: string;
+}
 
-  const selectedProgram =
-    programs.find((p) => p.id === selectedProgramId) || programs[0];
+interface AppContextType {
+  // Auth & Navigation
+  isLoggedIn: boolean;
+  isSuperAdmin: boolean;
+  isLeader: boolean;
+  isPatron: boolean;
+  currentAccount: UserAccount;
+  currentMember: TeamMember;
+  activePortal: PortalType;
+  availableAccounts: UserAccount[];
+  switchAccount: (accountId: string) => void;
+  switchPortal: (portal: PortalType) => void;
+  logout: () => void;
+  updateAccountPrivileges: (
+    targetAccountId: string,
+    newAllowedPortals: PortalType[],
+    defaultPortal?: PortalType
+  ) => Promise<{ success: boolean; message: string }>;
+  toggleMemberLeadership: (
+    memberId: string,
+    forceStatus?: boolean
+  ) => Promise<{ success: boolean; message: string }>;
+  checkEmailStatus: (email: string) => {
+    status: 'not_found' | 'needs_password' | 'has_password';
+    memberName?: string;
+    primaryRoleName?: string;
+  };
+  registerNewMember: (data: RegisterMemberData) => Promise<{ success: boolean; message: string }>;
+  setupFirstTimePassword: (email: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
+  loginWithPassword: (email: string, password: string) => Promise<{ success: boolean; message: string; requiresSetup?: boolean }>;
+  changePassword: (newPassword: string) => Promise<{ success: boolean; message: string }>;
+  resetPasswordForMember: (email: string) => Promise<void>;
 
-  // Modals
-  const [createProgOpen, setCreateProgOpen] = useState(false);
-  const [whatsAppModalOpen, setWhatsAppModalOpen] = useState(false);
-  const [whatsAppTargetMemberId, setWhatsAppTargetMemberId] = useState<string | undefined>();
-  const [whatsAppTargetRoleId, setWhatsAppTargetRoleId] = useState<string | undefined>();
-  const [calendarSyncOpen, setCalendarSyncOpen] = useState(false);
-  const [replacementModalOpen, setReplacementModalOpen] = useState(false);
-  const [activeReplacementData, setActiveReplacementData] = useState<{
-    assignment: RoleAssignment;
+  // WhatsApp Automated Duty Dispatch
+  whatsAppModalState: WhatsAppNotificationModalState | null;
+  closeWhatsAppModal: () => void;
+  openWhatsAppModalForAssignment: (programId: string, roleId: string, memberId: string) => void;
+
+  // Data Store
+  roles: MediaRole[];
+  members: TeamMember[];
+  programs: ProgramService[];
+  assignments: RoleAssignment[];
+  announcements: Announcement[];
+  verse: VerseOfTheDay;
+  reminderConfig: ReminderConfig;
+  auditLogs: AuditLog[];
+
+  // Attendance & Workflow Actions
+  confirmAttendance: (assignmentId: string, arrivalComment?: string, estimatedArrivalTime?: string) => Promise<void>;
+  declineAttendance: (assignmentId: string, reason: string) => Promise<void>;
+  assignMemberToRole: (programId: string, roleId: string, memberId: string) => Promise<void>;
+  autoFillRoster: (programId: string) => Promise<void>;
+  removeAssignment: (assignmentId: string) => Promise<void>;
+  replaceAssignment: (assignmentId: string, newMemberId: string) => Promise<void>;
+  triggerManualReminder: (programId: string, intervalLabel?: string) => Promise<void>;
+
+  // Session Security & Inactivity Timeout
+  inactivityLoggedOut: boolean;
+  clearInactivityFlag: () => void;
+  inactivityTimeoutMinutes: number;
+  setInactivityTimeoutMinutes: (mins: number) => void;
+  resetInactivityTimer: () => void;
+  showInactivityWarning: boolean;
+  inactivitySecondsRemaining: number;
+
+  // Automated 24-Hour Reminder Task & Direct Link Redirection
+  pending24HourDuties: Pending24HourDuty[];
+  automatedReminderModalOpen: boolean;
+  setAutomatedReminderModalOpen: (open: boolean) => void;
+  trigger24HourScan: () => void;
+  directConfirmData: { asg: RoleAssignment; prog: ProgramService; role: MediaRole; member: TeamMember } | null;
+  closeDirectConfirmModal: () => void;
+
+  // Programs & Management
+  createProgram: (newProg: Omit<ProgramService, 'id'>) => Promise<string>;
+  updateProgram: (updatedProg: ProgramService) => Promise<void>;
+  deleteProgram: (programId: string) => Promise<void>;
+
+  // Members Management
+  addMember: (member: Omit<TeamMember, 'id'>) => Promise<string>;
+  updateMember: (member: TeamMember) => Promise<void>;
+  deleteMember: (memberId: string) => Promise<void>;
+
+  // Announcements & Verses
+  addAnnouncement: (announcement: Omit<Announcement, 'id'>) => Promise<void>;
+  deleteAnnouncement: (id: string) => Promise<void>;
+  updateVerse: (newVerse: VerseOfTheDay) => Promise<void>;
+  updateReminderConfig: (config: ReminderConfig) => Promise<void>;
+
+  // Tools & Reset
+  resetToDefaults: () => Promise<void>;
+  toastMessage: string | null;
+  showToast: (msg: string) => void;
+}
+
+let idSequence = 0;
+export const generateUniqueId = (prefix: string): string => {
+  idSequence += 1;
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${prefix}-${Date.now()}-${idSequence}-${rand}`;
+};
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [roles, setRoles] = useState<MediaRole[]>([]);
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [accounts, setAccounts] = useState<UserAccount[]>([]);
+  const [programs, setPrograms] = useState<ProgramService[]>([]);
+  const [assignments, setAssignments] = useState<RoleAssignment[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [verse, setVerse] = useState<VerseOfTheDay>(INITIAL_VERSE);
+  const [reminderConfig, setReminderConfig] = useState<ReminderConfig>(INITIAL_REMINDER_CONFIG);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return sessionStorage.getItem('mediaserve_auth') === 'true';
+  });
+
+  const [currentAccountId, setCurrentAccountId] = useState<string>(() => {
+    return sessionStorage.getItem('mediaserve_account_id') || '';
+  });
+
+  const [activePortal, setActivePortal] = useState<PortalType>('team');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 4000);
+  };
+
+  async function loadData() {
+    try {
+      const [
+        { data: rolesData, error: rolesErr },
+        { data: membersData, error: memErr },
+        { data: accountsData, error: accErr },
+        { data: programsData, error: progErr },
+        { data: assignmentsData, error: asgErr },
+        { data: announcementsData, error: annErr },
+        { data: verseData },
+        { data: reminderData },
+        { data: logsData },
+      ] = await Promise.all([
+        supabase.from('roles').select('*'),
+        supabase.from('members').select('*'),
+        supabase.from('accounts').select('*'),
+        supabase.from('programs').select('*'),
+        supabase.from('assignments').select('*'),
+        supabase.from('announcements').select('*'),
+        supabase.from('verse').select('*').maybeSingle(),
+        supabase.from('reminder_config').select('*').maybeSingle(),
+        supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(50),
+      ]);
+
+      if (!rolesErr && rolesData && rolesData.length > 0) setRoles(rolesData);
+      else { setRoles(INITIAL_ROLES); await supabase.from('roles').upsert(INITIAL_ROLES); }
+
+      if (!memErr && membersData && membersData.length > 0) setMembers(membersData);
+      else { setMembers(INITIAL_MEMBERS); await supabase.from('members').upsert(INITIAL_MEMBERS); }
+
+      if (!accErr && accountsData && accountsData.length > 0) setAccounts(accountsData);
+      else { setAccounts(INITIAL_ACCOUNTS); await supabase.from('accounts').upsert(INITIAL_ACCOUNTS); }
+
+      if (!progErr && programsData && programsData.length > 0) setPrograms(programsData);
+      else { setPrograms(INITIAL_PROGRAMS); await supabase.from('programs').upsert(INITIAL_PROGRAMS); }
+
+      if (!asgErr && assignmentsData && assignmentsData.length > 0) setAssignments(assignmentsData);
+      else { setAssignments(INITIAL_ASSIGNMENTS); await supabase.from('assignments').upsert(INITIAL_ASSIGNMENTS); }
+
+      if (!annErr && announcementsData && announcementsData.length > 0) setAnnouncements(announcementsData);
+      else { setAnnouncements(INITIAL_ANNOUNCEMENTS); await supabase.from('announcements').upsert(INITIAL_ANNOUNCEMENTS); }
+
+      if (verseData) setVerse(verseData);
+      if (reminderData) setReminderConfig(reminderData);
+      if (logsData) setAuditLogs(logsData);
+    } catch (err) {
+      console.error('Error fetching data from Supabase:', err);
+    }
+  }
+
+  useEffect(() => {
+    loadData();
+
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        loadData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const currentAccount =
+    accounts.find((a) => a.id === currentAccountId) ||
+    accounts[0] || {
+      id: '',
+      email: '',
+      memberId: '',
+      allowedPortals: ['team'],
+      defaultPortal: 'team',
+    };
+
+  const currentMember =
+    members.find((m) => m.id === currentAccount?.memberId) ||
+    members[0] || {
+      id: '',
+      name: 'Guest Member',
+      email: '',
+      phone: '',
+      primaryRole: '',
+      secondaryRoles: [],
+      skillLevel: 'Beginner',
+      availability: [],
+      status: 'active',
+      joinedDate: new Date().toISOString().split('T')[0],
+    };
+
+  const isSuperAdmin = currentAccount?.email?.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase();
+  
+  // Patron Role Privilege Check
+  const isPatron =
+    currentAccount?.allowedPortals?.includes('patron') ||
+    currentAccount?.defaultPortal === 'patron';
+
+  const isLeader =
+    isSuperAdmin ||
+    isPatron ||
+    currentAccount?.allowedPortals?.includes('leadership') ||
+    Boolean(currentMember?.isLeader);
+
+  const [whatsAppModalState, setWhatsAppModalState] = useState<WhatsAppNotificationModalState | null>(null);
+
+  const closeWhatsAppModal = () => setWhatsAppModalState(null);
+
+  const openWhatsAppModalForAssignment = (programId: string, roleId: string, memberId: string) => {
+    const member = members.find((m) => m.id === memberId);
+    const role = roles.find((r) => r.id === roleId);
+    const program = programs.find((p) => p.id === programId);
+    if (!member || !role || !program) return;
+
+    const targetAsg = assignments.find(
+      (a) => a.programId === programId && a.roleId === roleId && a.memberId === memberId
+    );
+
+    const { whatsappUrl, message } = buildAssignmentWhatsAppMessage({
+      memberName: member.name,
+      memberPhone: member.phone,
+      roleName: role.name,
+      station: role.station,
+      programTitle: program.title,
+      programDate: program.date,
+      callTime: program.callTime,
+      startTime: program.startTime,
+      endTime: program.endTime,
+      assignmentId: targetAsg?.id,
+      memberId: member.id,
+    });
+
+    setWhatsAppModalState({ member, role, program, whatsappUrl, messageText: message });
+  };
+
+  const [inactivityTimeoutMinutes, setInactivityTimeoutMinutes] = useState<number>(15);
+  const [inactivityLoggedOut, setInactivityLoggedOut] = useState<boolean>(false);
+  const [showInactivityWarning, setShowInactivityWarning] = useState<boolean>(false);
+  const [inactivitySecondsRemaining, setInactivitySecondsRemaining] = useState<number>(60);
+  const lastActivityRef = useRef<number>(Date.now());
+
+  const clearInactivityFlag = () => setInactivityLoggedOut(false);
+
+  const resetInactivityTimer = () => {
+    lastActivityRef.current = Date.now();
+    setShowInactivityWarning(false);
+    setInactivitySecondsRemaining(60);
+  };
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    lastActivityRef.current = Date.now();
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    const handleActivity = () => { lastActivityRef.current = Date.now(); };
+
+    events.forEach((ev) => window.addEventListener(ev, handleActivity, { passive: true }));
+
+    const totalTimeoutMs = inactivityTimeoutMinutes * 60 * 1000;
+    const warningThresholdMs = Math.max(30000, totalTimeoutMs - 60 * 1000);
+
+    const intervalId = setInterval(() => {
+      const elapsed = Date.now() - lastActivityRef.current;
+
+      if (elapsed >= totalTimeoutMs) {
+        setIsLoggedIn(false);
+        sessionStorage.removeItem('mediaserve_auth');
+        setInactivityLoggedOut(true);
+        setShowInactivityWarning(false);
+        showToast('Session Expired: You were automatically signed out due to inactivity.');
+      } else if (elapsed >= warningThresholdMs) {
+        setShowInactivityWarning(true);
+        setInactivitySecondsRemaining(Math.max(1, Math.ceil((totalTimeoutMs - elapsed) / 1000)));
+      } else {
+        setShowInactivityWarning(false);
+      }
+    }, 1000);
+
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, handleActivity));
+      clearInterval(intervalId);
+    };
+  }, [isLoggedIn, inactivityTimeoutMinutes]);
+
+  const parseServiceDateTime = (dateStr: string, timeStr?: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    let hours = 8;
+    let minutes = 0;
+
+    if (timeStr) {
+      const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const ampm = match[3]?.toUpperCase();
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        hours = h;
+        minutes = m;
+      }
+    }
+
+    return new Date(year, month - 1, day, hours, minutes);
+  };
+
+  const [directConfirmData, setDirectConfirmData] = useState<{
+    asg: RoleAssignment;
+    prog: ProgramService;
     role: MediaRole;
+    member: TeamMember;
   } | null>(null);
 
-  // New Program Form State
-  const [newTitle, setNewTitle] = useState('');
-  const [newServiceType, setNewServiceType] = useState<ProgramService['serviceType']>('Sunday Divine Service');
-  const [newDate, setNewDate] = useState('2026-10-11');
-  const [newStartTime, setNewStartTime] = useState('07:30 AM');
-  const [newEndTime, setNewEndTime] = useState('10:00 AM');
-  const [newCallTime, setNewCallTime] = useState('06:45 AM');
-  const [newLocation, setNewLocation] = useState('Main Sanctuary & Media Suite, AKWC');
-  const [newTheme, setNewTheme] = useState('');
-  const [newDirector, setNewDirector] = useState(currentMember.name);
+  const closeDirectConfirmModal = () => setDirectConfirmData(null);
 
-  // Active leaders list for assigning Duty Directors
-  const leadersList = members.filter(
-    (m) =>
-      Boolean(m.isLeader) ||
-      m.email.toLowerCase() === 'bernardoobuobi@gmail.com' ||
-      Boolean(
-        availableAccounts.find(
-          (a) => a.memberId === m.id || a.email.toLowerCase() === m.email.toLowerCase()
-        )?.allowedPortals.includes('leadership')
-      )
-  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
 
-  // Assignments for current program
-  const currentAssignments = assignments.filter((a) => a.programId === selectedProgram?.id);
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const asgId = urlParams.get('asgId');
+      const memberId = urlParams.get('memberId');
 
-  // Calculate monitoring stats
-  const totalSlots = roles.length;
-  const assignedSlots = currentAssignments.filter((a) => a.memberId).length;
-  const confirmedCount = currentAssignments.filter((a) => a.status === 'confirmed').length;
-  const pendingCount = currentAssignments.filter((a) => a.status === 'pending' && a.memberId).length;
-  const declinedCount = currentAssignments.filter((a) => a.status === 'declined').length;
-  const unassignedCount = totalSlots - assignedSlots;
+      if (asgId) {
+        const foundAsg = assignments.find((a) => a.id === asgId);
+        const targetMemId = memberId || foundAsg?.memberId;
+        const foundMem = members.find((m) => m.id === targetMemId);
+        const foundProg = programs.find((p) => p.id === foundAsg?.programId);
+        const foundRole = roles.find((r) => r.id === foundAsg?.roleId);
 
-  const confirmationRate = assignedSlots > 0 ? Math.round((confirmedCount / assignedSlots) * 100) : 0;
+        if (foundMem && foundAsg && foundProg && foundRole) {
+          setDirectConfirmData({
+            asg: foundAsg,
+            prog: foundProg,
+            role: foundRole,
+            member: foundMem,
+          });
 
-  const handleCreateProgram = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle) return;
-    const newId = createProgram({
-      title: newTitle,
-      serviceType: newServiceType,
-      date: newDate,
-      startTime: newStartTime,
-      endTime: newEndTime,
-      callTime: newCallTime,
-      location: newLocation,
-      theme: newTheme,
-      directorName: newDirector,
+          showToast(`Welcome ${foundMem.name}! Please confirm your attendance below.`);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    } catch {
+      // Ignore URL parsing errors
+    }
+  }, [assignments, members, programs, roles]);
+
+  const [automatedReminderModalOpen, setAutomatedReminderModalOpen] = useState(false);
+  const [pending24HourDuties, setPending24HourDuties] = useState<Pending24HourDuty[]>([]);
+
+  const calculatePending24HourDuties = (): Pending24HourDuty[] => {
+    const now = Date.now();
+    const result: Pending24HourDuty[] = [];
+
+    programs.forEach((prog) => {
+      const serviceDt = parseServiceDateTime(prog.date, prog.callTime || prog.startTime);
+      const diffMs = serviceDt.getTime() - now;
+      const hoursRemaining = Math.round(diffMs / (1000 * 60 * 60));
+
+      if (hoursRemaining >= -4 && hoursRemaining <= 24) {
+        const progAsgs = assignments.filter((a) => a.programId === prog.id && a.memberId && a.status === 'pending');
+        progAsgs.forEach((asg) => {
+          const mem = members.find((m) => m.id === asg.memberId);
+          const role = roles.find((r) => r.id === asg.roleId);
+          if (mem && role) {
+            result.push({
+              assignment: asg,
+              program: prog,
+              role,
+              member: mem,
+              hoursRemaining: Math.max(0, hoursRemaining),
+            });
+          }
+        });
+      }
     });
-    setSelectedProgramId(newId);
-    setCreateProgOpen(false);
-    setNewTitle('');
-    setNewTheme('');
+
+    return result;
   };
 
-  const handleOpenWhatsAppForMember = (memberId: string, roleId: string) => {
-    setWhatsAppTargetMemberId(memberId);
-    setWhatsAppTargetRoleId(roleId);
-    setWhatsAppModalOpen(true);
+  const trigger24HourScan = () => {
+    const list = calculatePending24HourDuties();
+    setPending24HourDuties(list);
+
+    if (list.length > 0) {
+      list.forEach(async (item) => {
+        if (!item.assignment.remindersSent.includes('24h')) {
+          const updatedReminders = [...new Set([...item.assignment.remindersSent, '24h'])];
+          await supabase.from('assignments').update({ remindersSent: updatedReminders }).eq('id', item.assignment.id);
+
+          logAction(
+            'Automated 24h Task',
+            '24-Hour Reminder Alert',
+            `Service "${item.program.title}" is within 24 hours. Pending confirmation for ${item.member.name} (${item.role.name}).`,
+            'reminder'
+          );
+        }
+      });
+      showToast(`24-Hour Reminder Task: Found ${list.length} pending crew members within 24h.`);
+    } else {
+      showToast('24-Hour Reminder Task: All assigned members within 24h are confirmed!');
+    }
   };
 
-  const handleOpenReplacement = (asg: RoleAssignment, role: MediaRole) => {
-    setActiveReplacementData({ assignment: asg, role });
-    setReplacementModalOpen(true);
+  useEffect(() => {
+    const runScan = () => setPending24HourDuties(calculatePending24HourDuties());
+    runScan();
+    const interval = setInterval(runScan, 30000);
+    return () => clearInterval(interval);
+  }, [programs, assignments, members, roles]);
+
+  const switchAccount = (accountId: string) => {
+    const acc = accounts.find((a) => a.id === accountId);
+    if (acc) {
+      setCurrentAccountId(acc.id);
+      setIsLoggedIn(true);
+      sessionStorage.setItem('mediaserve_auth', 'true');
+      sessionStorage.setItem('mediaserve_account_id', acc.id);
+      if (!acc.allowedPortals.includes(activePortal)) setActivePortal(acc.defaultPortal);
+      const mem = members.find((m) => m.id === acc.memberId);
+      showToast(`Logged in as ${mem?.name || acc.email}`);
+    }
   };
 
-  // Auto fill recommendation
-  const handleAutoFillRoster = () => {
-    if (!selectedProgram) return;
-    autoFillRoster(selectedProgram.id);
+  const logout = () => {
+    setIsLoggedIn(false);
+    setCurrentAccountId('');
+    sessionStorage.removeItem('mediaserve_auth');
+    sessionStorage.removeItem('mediaserve_account_id');
+    showToast('You have been signed out.');
+  };
+
+  const checkEmailStatus = (email: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+    const mem = members.find((m) => m.email.toLowerCase() === cleanEmail);
+
+    if (!acc && !mem) {
+      return { status: 'not_found' as const };
+    }
+
+    const primaryRole = roles.find((r) => r.id === mem?.primaryRole);
+
+    if (acc && acc.hasSetPassword) {
+      return {
+        status: 'has_password' as const,
+        memberName: mem?.name || acc.email,
+        primaryRoleName: primaryRole?.name,
+      };
+    }
+
+    return {
+      status: 'needs_password' as const,
+      memberName: mem?.name || acc?.email || cleanEmail,
+      primaryRoleName: primaryRole?.name,
+    };
+  };
+
+  const registerNewMember = async (data: RegisterMemberData): Promise<{ success: boolean; message: string }> => {
+    const cleanEmail = data.email.trim().toLowerCase();
+
+    if (!data.name.trim()) return { success: false, message: 'Please provide your full name.' };
+    if (!cleanEmail || !cleanEmail.includes('@')) return { success: false, message: 'Please provide a valid email address.' };
+    if (!data.phone.trim()) return { success: false, message: 'Please provide your WhatsApp / phone number.' };
+    if (!data.password || data.password.length < 6) return { success: false, message: 'Password must be at least 6 characters long.' };
+
+    const existingAcc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+    if (existingAcc) return { success: false, message: 'An account with this email already exists.' };
+
+    const newMemberId = generateUniqueId('mem');
+    const newAccountId = generateUniqueId('acc');
+
+    const newMember: TeamMember = {
+      id: newMemberId,
+      name: data.name.trim(),
+      email: cleanEmail,
+      phone: data.phone.trim(),
+      gender: data.gender,
+      primaryRole: data.primaryRole,
+      secondaryRoles: data.secondaryRoles,
+      skillLevel: data.skillLevel,
+      rawSkillDescription: data.rawSkillDescription,
+      availability: data.availability,
+      status: 'active',
+      joinedDate: new Date().toISOString().split('T')[0],
+      notes: data.notes.trim() || undefined,
+    };
+
+    const newAccount: UserAccount = {
+      id: newAccountId,
+      email: cleanEmail,
+      memberId: newMemberId,
+      allowedPortals: ['team'],
+      defaultPortal: 'team',
+      password: data.password,
+      hasSetPassword: true,
+      passwordSetAt: new Date().toISOString(),
+    };
+
+    const { error: memErr } = await supabase.from('members').insert([newMember]);
+    if (memErr) {
+      console.error('Error inserting member:', memErr.message);
+      return { success: false, message: `Database Error: ${memErr.message}` };
+    }
+
+    const { error: accErr } = await supabase.from('accounts').insert([newAccount]);
+    if (accErr) {
+      console.error('Error inserting account:', accErr.message);
+      return { success: false, message: `Account Creation Error: ${accErr.message}` };
+    }
+
+    setMembers((prev) => [...prev, newMember]);
+    setAccounts((prev) => [...prev, newAccount]);
+
+    setCurrentAccountId(newAccountId);
+    setActivePortal('team');
+    setIsLoggedIn(true);
+    sessionStorage.setItem('mediaserve_auth', 'true');
+    sessionStorage.setItem('mediaserve_account_id', newAccountId);
+
+    await logAction(data.name, 'New Team Member Registration', `Registered via onboarding form as ${roles.find((r) => r.id === data.primaryRole)?.name || 'Media Member'}.`, 'system');
+    showToast(`Welcome to AKWC Media, ${data.name}! Your account is active.`);
+    return { success: true, message: `Account created successfully! Welcome to the team.` };
+  };
+
+  const switchPortal = (portal: PortalType) => {
+    if (portal === 'admin' && !isSuperAdmin) {
+      showToast('Access Denied: Only the Super Admin (bernardoobuobi@gmail.com) can access the Admin Portal.');
+      return;
+    }
+
+    const userHasLeadership = isSuperAdmin || isPatron || currentAccount.allowedPortals.includes('leadership') || Boolean(currentMember?.isLeader);
+
+    if (portal === 'leadership' && !userHasLeadership) {
+      showToast('Access Denied: You do not have Leadership privileges.');
+      return;
+    }
+
+    setActivePortal(portal);
+  };
+
+  const updateAccountPrivileges = async (
+    targetAccountId: string,
+    newAllowedPortals: PortalType[],
+    defaultPortal?: PortalType
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!isSuperAdmin) {
+      const msg = 'Security violation: Only the Super Admin (bernardoobuobi@gmail.com) is authorized to assign admin or leader privileges.';
+      showToast(msg);
+      return { success: false, message: msg };
+    }
+
+    const targetAcc = accounts.find((a) => a.id === targetAccountId);
+    if (!targetAcc) return { success: false, message: 'Account not found.' };
+
+    const sanitizedPortals: PortalType[] = newAllowedPortals.filter((p) => {
+      if (p === 'admin') return targetAcc.email.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase();
+      return true;
+    });
+
+    if (!sanitizedPortals.includes('team')) sanitizedPortals.push('team');
+    const isGrantedLeadership = sanitizedPortals.includes('leadership');
+    const def = defaultPortal || (isGrantedLeadership ? 'leadership' : 'team');
+
+    await supabase.from('accounts').update({ allowedPortals: sanitizedPortals, defaultPortal: def }).eq('id', targetAccountId);
+    await supabase.from('members').update({ isLeader: isGrantedLeadership }).eq('id', targetAcc.memberId);
+
+    setAccounts((prev) => prev.map((a) => (a.id === targetAccountId ? { ...a, allowedPortals: sanitizedPortals, defaultPortal: def } : a)));
+
+    const mem = members.find((m) => m.id === targetAcc.memberId);
+    await logAction(currentMember.name, 'Updated Team Member Privileges', `Super Admin updated permissions for ${mem?.name || targetAcc.email}. Leader status: ${isGrantedLeadership ? 'Granted' : 'Revoked'}.`, 'system');
+
+    showToast(`Updated privileges for ${mem?.name || targetAcc.email}`);
+    return { success: true, message: 'Privileges updated successfully.' };
+  };
+
+  const toggleMemberLeadership = async (memberId: string, forceStatus?: boolean): Promise<{ success: boolean; message: string }> => {
+    const mem = members.find((m) => m.id === memberId);
+    if (!mem) return { success: false, message: 'Member not found.' };
+
+    const newIsLeader = forceStatus !== undefined ? forceStatus : !Boolean(mem.isLeader);
+
+    await supabase.from('members').update({ isLeader: newIsLeader }).eq('id', memberId);
+    setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, isLeader: newIsLeader } : m)));
+
+    const targetAcc = accounts.find((a) => a.memberId === memberId);
+    if (targetAcc) {
+      const currentAllowed = targetAcc.allowedPortals || ['team'];
+      const newAllowed = newIsLeader ? Array.from(new Set([...currentAllowed, 'leadership', 'team'])) : currentAllowed.filter((p) => p !== 'leadership');
+
+      await supabase.from('accounts').update({ allowedPortals: newAllowed, defaultPortal: newIsLeader ? 'leadership' : 'team' }).eq('id', targetAcc.id);
+      setAccounts((prev) => prev.map((a) => (a.id === targetAcc.id ? { ...a, allowedPortals: newAllowed, defaultPortal: newIsLeader ? 'leadership' : 'team' } : a)));
+    }
+
+    const msg = newIsLeader ? `${mem.name} is now a Media Leader!` : `Revoked leadership privileges for ${mem.name}.`;
+    showToast(msg);
+    return { success: true, message: msg };
+  };
+
+  const setupFirstTimePassword = async (email: string, newPassword: string): Promise<{ success: boolean; message: string }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    
+    let acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+    let mem = members.find((m) => m.email.toLowerCase() === cleanEmail);
+
+    if (!acc && mem) {
+      acc = accounts.find((a) => a.memberId === mem.id);
+    }
+
+    if (!acc && mem) {
+      const newAccountId = generateUniqueId('acc');
+      acc = {
+        id: newAccountId,
+        email: cleanEmail,
+        memberId: mem.id,
+        allowedPortals: ['team'],
+        defaultPortal: 'team',
+        password: newPassword,
+        hasSetPassword: true,
+        passwordSetAt: new Date().toISOString(),
+      };
+      await supabase.from('accounts').insert([acc]);
+      setAccounts((prev) => [...prev, acc!]);
+    } else if (acc) {
+      const { error } = await supabase.from('accounts').update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() }).eq('id', acc.id);
+      if (error) return { success: false, message: error.message };
+      setAccounts((prev) => prev.map((a) => (a.id === acc!.id ? { ...a, password: newPassword, hasSetPassword: true } : a)));
+    } else {
+      return { success: false, message: 'Email not found on media team roster.' };
+    }
+
+    setCurrentAccountId(acc.id);
+    setIsLoggedIn(true);
+    sessionStorage.setItem('mediaserve_auth', 'true');
+    sessionStorage.setItem('mediaserve_account_id', acc.id);
+
+    showToast(`Welcome ${mem?.name || cleanEmail}! Account activated.`);
+    return { success: true, message: 'Account activated successfully!' };
+  };
+
+  const loginWithPassword = async (email: string, password: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+
+    if (!acc) return { success: false, message: 'No account found with this email.' };
+    if (!acc.hasSetPassword) return { success: false, requiresSetup: true, message: 'Please set your password first.' };
+    if (acc.password !== password) return { success: false, message: 'Incorrect password.' };
+
+    setCurrentAccountId(acc.id);
+    setIsLoggedIn(true);
+    sessionStorage.setItem('mediaserve_auth', 'true');
+    sessionStorage.setItem('mediaserve_account_id', acc.id);
+
+    const mem = members.find((m) => m.id === acc.memberId);
+    showToast(`Welcome back, ${mem?.name || acc.email}!`);
+    return { success: true, message: `Welcome back, ${mem?.name || acc.email}!` };
+  };
+
+  const changePassword = async (newPassword: string) => {
+    await supabase.from('accounts').update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() }).eq('id', currentAccount.id);
+    setAccounts((prev) => prev.map((a) => (a.id === currentAccount.id ? { ...a, password: newPassword, hasSetPassword: true } : a)));
+    showToast('Your password was updated.');
+    return { success: true, message: 'Password updated successfully.' };
+  };
+
+  const resetPasswordForMember = async (email: string) => {
+    const cleanEmail = email.trim().toLowerCase();
+    await supabase.from('accounts').update({ password: null, hasSetPassword: false, passwordSetAt: null }).eq('email', cleanEmail);
+    setAccounts((prev) => prev.map((a) => (a.email.toLowerCase() === cleanEmail ? { ...a, password: undefined, hasSetPassword: false } : a)));
+    showToast(`Password reset for ${cleanEmail}.`);
+  };
+
+  const logAction = async (actor: string, action: string, details: string, type: AuditLog['type']) => {
+    const newLog: AuditLog = {
+      id: generateUniqueId('log'),
+      timestamp: new Date().toISOString(),
+      actorName: actor,
+      action,
+      details,
+      type,
+    };
+    setAuditLogs((prev) => [newLog, ...prev.slice(0, 49)]);
+    await supabase.from('audit_logs').insert([newLog]);
+  };
+
+  const confirmAttendance = async (assignmentId: string, arrivalComment?: string, estimatedArrivalTime?: string) => {
+    await supabase.from('assignments').update({ status: 'confirmed', confirmedAt: new Date().toISOString(), arrivalComment: arrivalComment?.trim() || null, estimatedArrivalTime: estimatedArrivalTime?.trim() || null, declineReason: null }).eq('id', assignmentId);
+    setAssignments((prev) => prev.map((a) => (a.id === assignmentId ? { ...a, status: 'confirmed', confirmedAt: new Date().toISOString(), arrivalComment: arrivalComment?.trim() || undefined, estimatedArrivalTime: estimatedArrivalTime?.trim() || undefined } : a)));
+    showToast('Attendance confirmed!');
+  };
+
+  const declineAttendance = async (assignmentId: string, reason: string) => {
+    await supabase.from('assignments').update({ status: 'declined', declineReason: reason || 'Not specified' }).eq('id', assignmentId);
+    setAssignments((prev) => prev.map((a) => (a.id === assignmentId ? { ...a, status: 'declined', declineReason: reason || 'Not specified' } : a)));
+    showToast('Declined. Leadership notified.');
+  };
+
+  const assignMemberToRole = async (programId: string, roleId: string, memberId: string) => {
+    const existing = assignments.find((a) => a.programId === programId && a.roleId === roleId);
+
+    if (existing) {
+      await supabase.from('assignments').update({ memberId, status: 'pending', declineReason: null, confirmedAt: null }).eq('id', existing.id);
+      setAssignments((prev) => prev.map((a) => (a.id === existing.id ? { ...a, memberId, status: 'pending' } : a)));
+    } else {
+      const newAsg: RoleAssignment = { id: generateUniqueId('asg'), programId, roleId, memberId, status: 'pending', remindersSent: [] };
+      await supabase.from('assignments').insert([newAsg]);
+      setAssignments((prev) => [...prev, newAsg]);
+    }
+    showToast('Member assigned.');
+  };
+
+  const autoFillRoster = async (programId: string) => {
+    const unassignedRoles = roles.filter((r) => !assignments.some((a) => a.programId === programId && a.roleId === r.id && a.memberId));
+    const assignedMemberIds = new Set(assignments.filter((a) => a.programId === programId && a.memberId).map((a) => a.memberId as string));
+    const newAssignments: RoleAssignment[] = [];
+
+    for (const role of unassignedRoles) {
+      const candidates = members.filter((m) => m.status === 'active' && !assignedMemberIds.has(m.id) && (m.primaryRole === role.id || m.secondaryRoles?.includes(role.id)));
+      if (candidates.length > 0) {
+        const selected = candidates[Math.floor(Math.random() * candidates.length)];
+        assignedMemberIds.add(selected.id);
+        newAssignments.push({
+          id: generateUniqueId('asg'),
+          programId,
+          roleId: role.id,
+          memberId: selected.id,
+          status: 'pending',
+          remindersSent: [],
+        });
+      }
+    }
+
+    if (newAssignments.length > 0) {
+      await supabase.from('assignments').insert(newAssignments);
+      setAssignments((prev) => [...prev, ...newAssignments]);
+      showToast(`Auto-filled ${newAssignments.length} positions!`);
+    } else {
+      showToast('No available matching candidates for open roles.');
+    }
+  };
+
+  const removeAssignment = async (assignmentId: string) => {
+    await supabase.from('assignments').delete().eq('id', assignmentId);
+    setAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
+    showToast('Assignment removed.');
+  };
+
+  const replaceAssignment = async (assignmentId: string, newMemberId: string) => {
+    await supabase.from('assignments').update({ memberId: newMemberId, status: 'pending', declineReason: null, confirmedAt: null }).eq('id', assignmentId);
+    setAssignments((prev) => prev.map((a) => (a.id === assignmentId ? { ...a, memberId: newMemberId, status: 'pending', declineReason: undefined } : a)));
+    showToast('Replacement candidate assigned!');
+  };
+
+  const triggerManualReminder = async (programId: string) => {
+    showToast(`Dispatched reminders for service.`);
+  };
+
+  const createProgram = async (newProg: Omit<ProgramService, 'id'>): Promise<string> => {
+    const id = generateUniqueId('prog');
+    const program: ProgramService = { ...newProg, id };
+    await supabase.from('programs').insert([program]);
+    setPrograms((prev) => [program, ...prev]);
+    showToast('Service created successfully!');
+    return id;
+  };
+
+  const updateProgram = async (updatedProg: ProgramService) => {
+    await supabase.from('programs').update(updatedProg).eq('id', updatedProg.id);
+    setPrograms((prev) => prev.map((p) => (p.id === updatedProg.id ? updatedProg : p)));
+    showToast('Service updated.');
+  };
+
+  const deleteProgram = async (programId: string) => {
+    await supabase.from('programs').delete().eq('id', programId);
+    await supabase.from('assignments').delete().eq('programId', programId);
+    setPrograms((prev) => prev.filter((p) => p.id !== programId));
+    setAssignments((prev) => prev.filter((a) => a.programId !== programId));
+    showToast('Service deleted.');
+  };
+
+  const addMember = async (member: Omit<TeamMember, 'id'>): Promise<string> => {
+    const id = generateUniqueId('mem');
+    const newMember: TeamMember = { ...member, id };
+    await supabase.from('members').insert([newMember]);
+    setMembers((prev) => [...prev, newMember]);
+    showToast(`Added ${newMember.name} to roster.`);
+    return id;
+  };
+
+  const updateMember = async (member: TeamMember) => {
+    await supabase.from('members').update(member).eq('id', member.id);
+    setMembers((prev) => prev.map((m) => (m.id === member.id ? member : m)));
+    showToast('Member details updated.');
+  };
+
+  // Protected Member Deletion (Super Admin Only)
+  const deleteMember = async (memberId: string) => {
+    if (!isSuperAdmin) {
+      showToast('Permission Denied: Only the Super Admin (bernardoobuobi@gmail.com) can delete team members.');
+      return;
+    }
+    await supabase.from('members').delete().eq('id', memberId);
+    await supabase.from('accounts').delete().eq('memberId', memberId);
+
+    setMembers((prev) => prev.filter((m) => m.id !== memberId));
+    setAccounts((prev) => prev.filter((a) => a.memberId !== memberId));
+    showToast('Member deleted.');
+  };
+
+  const addAnnouncement = async (announcement: Omit<Announcement, 'id'>) => {
+    const id = generateUniqueId('ann');
+    const newAnn: Announcement = { ...announcement, id };
+    await supabase.from('announcements').insert([newAnn]);
+    setAnnouncements((prev) => [newAnn, ...prev]);
+    showToast('Announcement posted!');
+  };
+
+  const deleteAnnouncement = async (id: string) => {
+    await supabase.from('announcements').delete().eq('id', id);
+    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+    showToast('Announcement removed.');
+  };
+
+  const updateVerse = async (newVerse: VerseOfTheDay) => {
+    await supabase.from('verse').upsert([newVerse]);
+    setVerse(newVerse);
+    showToast('Verse updated.');
+  };
+
+  const updateReminderConfig = async (config: ReminderConfig) => {
+    await supabase.from('reminder_config').upsert([config]);
+    setReminderConfig(config);
+    showToast('Reminder settings updated.');
+  };
+
+  const resetToDefaults = async () => {
+    showToast('Data reset triggered.');
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
-      {/* Automated 24-Hour Reminder Alert Banner */}
-      {pending24HourDuties.length > 0 && (
-        <section className="p-4 sm:p-5 bg-amber-500/15 border border-amber-500/40 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg shadow-amber-950/20 animate-in fade-in duration-150">
-          <div className="flex items-start gap-3.5">
-            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 mt-0.5 shrink-0 border border-amber-500/30">
-              <Clock className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-white">
-                  Automated 24-Hour Reminder Task Alert
-                </h2>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 uppercase tracking-wide">
-                  {pending24HourDuties.length} Pending Confirmation
-                </span>
-              </div>
-              <p className="text-xs text-amber-200/90 mt-1 leading-relaxed">
-                {pending24HourDuties.length} assigned crew member{pending24HourDuties.length > 1 ? 's have' : ' has'} not confirmed attendance for services within the next 24 hours. Automated WhatsApp links with direct portal confirmation (`?action=confirm`) are ready to dispatch.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setAutomatedReminderModalOpen(true)}
-              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-colors flex items-center gap-2 cursor-pointer"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>Review & Dispatch 24h Reminders</span>
-            </button>
-            <button
-              type="button"
-              onClick={trigger24HourScan}
-              title="Refresh 24-hour scan"
-              className="p-2.5 bg-slate-900 hover:bg-slate-800 text-amber-400 border border-slate-800 hover:border-amber-500/40 rounded-xl text-xs transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* Workflow Navigation Banner */}
-      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-7 space-y-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
-                Core Leadership Workflow
-              </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 font-semibold flex items-center gap-1">
-                <Shield className="w-3 h-3" />
-                <span>Authorized Leader: {currentMember.name}</span>
-              </span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-white mt-0.5">
-              Create → Assign → Remind → Confirm → Monitor
-            </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Plan service media coverage, assign crew stations, trigger multi-stage reminders, and monitor confirmations in real time.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => {
-                const defaultDir =
-                  leadersList.find((l) => l.name === currentMember.name)?.name ||
-                  leadersList[0]?.name ||
-                  currentMember.name;
-                setNewDirector(defaultDir);
-                setCreateProgOpen(true);
-              }}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-amber-500/10 transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Create Service</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setWhatsAppTargetMemberId(undefined);
-                setWhatsAppModalOpen(true);
-              }}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-xl transition-colors"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>WhatsApp Dispatch</span>
-            </button>
-
-            <button
-              onClick={() => setCalendarSyncOpen(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl transition-colors"
-            >
-              <Calendar className="w-4 h-4 text-amber-400" />
-              <span>Google Calendar</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Program Selector Tabs */}
-        <div className="pt-2 border-t border-slate-800">
-          <div className="text-xs font-medium text-slate-400 mb-2">Select Active Service Roster:</div>
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-            {programs.map((prog) => {
-              const isSelected = selectedProgram?.id === prog.id;
-              const progAssignments = assignments.filter((a) => a.programId === prog.id);
-              const hasDeclines = progAssignments.some((a) => a.status === 'declined');
-
-              return (
-                <button
-                  key={prog.id}
-                  onClick={() => setSelectedProgramId(prog.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-medium transition-all whitespace-nowrap shrink-0 ${
-                    isSelected
-                      ? 'bg-amber-500/10 border-amber-500/60 text-white shadow-xs'
-                      : 'bg-slate-950 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <span className="font-semibold">{prog.title}</span>
-                  <span className="text-[11px] text-slate-500">({prog.date})</span>
-                  {hasDeclines && (
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" title="Has declined shift needing replacement" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Program Details & Real-Time Monitoring Stats */}
-      {selectedProgram && (
-        <section className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Service Info Box */}
-          <div className="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <span className="text-xs font-semibold text-amber-400">{selectedProgram.serviceType}</span>
-                <h2 className="text-xl font-bold text-white mt-0.5">{selectedProgram.title}</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleAutoFillRoster}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-medium rounded-lg border border-slate-700 transition-colors"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Auto-Fill Qualified Roster</span>
-                </button>
-                {programs.length > 1 && (
-                  <button
-                    onClick={() => deleteProgram(selectedProgram.id)}
-                    className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/20 rounded-lg transition-colors"
-                    title="Delete service"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {selectedProgram.theme && (
-              <p className="text-xs text-amber-200/90 italic">
-                Theme: &ldquo;{selectedProgram.theme}&rdquo;
-              </p>
-            )}
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-              <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl">
-                <div className="text-[11px] text-slate-500">Service Date</div>
-                <div className="text-sm font-semibold text-white mt-0.5">{selectedProgram.date}</div>
-              </div>
-              <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl">
-                <div className="text-[11px] text-slate-500">Call Time (Strict)</div>
-                <div className="text-sm font-bold text-amber-300 mt-0.5">{selectedProgram.callTime}</div>
-              </div>
-              <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl">
-                <div className="text-[11px] text-slate-500">Service Hours</div>
-                <div className="text-sm font-semibold text-slate-200 mt-0.5">
-                  {selectedProgram.startTime} - {selectedProgram.endTime}
-                </div>
-              </div>
-              <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl">
-                <div className="text-[11px] text-slate-500">Duty Director</div>
-                <div className="text-sm font-semibold text-slate-200 mt-0.5">{selectedProgram.directorName}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Monitoring Stats Column */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between space-y-4">
-            <div>
-              <div className="text-xs font-semibold text-slate-400">Live Confirmation Rate</div>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-3xl font-extrabold text-white tabular-nums">{confirmationRate}%</span>
-                <span className="text-xs text-slate-400">
-                  ({confirmedCount}/{assignedSlots} confirmed)
-                </span>
-              </div>
-              <div className="w-full bg-slate-800 rounded-full h-2 mt-2 overflow-hidden flex">
-                <div
-                  className="bg-emerald-500 h-full transition-all duration-300"
-                  style={{ width: `${confirmationRate}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2 bg-slate-950 rounded-lg border border-slate-800">
-                <div className="text-emerald-400 font-bold tabular-nums text-base">{confirmedCount}</div>
-                <div className="text-[11px] text-slate-400">Confirmed</div>
-              </div>
-              <div className="p-2 bg-slate-950 rounded-lg border border-slate-800">
-                <div className="text-amber-400 font-bold tabular-nums text-base">{pendingCount}</div>
-                <div className="text-[11px] text-slate-400">Pending</div>
-              </div>
-              <div className="p-2 bg-slate-950 rounded-lg border border-slate-800">
-                <div className="text-rose-400 font-bold tabular-nums text-base">{declinedCount}</div>
-                <div className="text-[11px] text-slate-400">Declined</div>
-              </div>
-              <div className="p-2 bg-slate-950 rounded-lg border border-slate-800">
-                <div className="text-slate-400 font-bold tabular-nums text-base">{unassignedCount}</div>
-                <div className="text-[11px] text-slate-400">Vacant</div>
-              </div>
-            </div>
-
-            {declinedCount > 0 && (
-              <div className="p-2.5 bg-rose-950/40 border border-rose-900/60 rounded-xl flex items-center gap-2 text-xs text-rose-300">
-                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>{declinedCount} member declined. Replacement required immediately.</span>
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* Roster Assignment Matrix Table */}
-      <section className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Media Stations & Assignment Matrix</h2>
-            <p className="text-xs text-slate-400">Assign crew to audio, video switcher, cameras, projection, lighting and streaming stations.</p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => triggerManualReminder(selectedProgram.id, '24-Hour Call Time Alert')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition-colors"
-            >
-              <Send className="w-3.5 h-3.5 text-blue-400" />
-              <span>Broadcast 24h Reminder</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="py-3 px-4">Station & Media Role</th>
-                  <th className="py-3 px-4">Required Skill</th>
-                  <th className="py-3 px-4">Assigned Member</th>
-                  <th className="py-3 px-4">Status & Attendance</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/80">
-                {roles.map((role) => {
-                  const asg = currentAssignments.find((a) => a.roleId === role.id);
-                  const assignedMember = members.find((m) => m.id === asg?.memberId);
-                  const isDeclined = asg?.status === 'declined';
-                  const isConfirmed = asg?.status === 'confirmed';
-                  const isPending = asg?.status === 'pending' && Boolean(assignedMember);
-
-                  return (
-                    <tr
-                      key={role.id}
-                      className={`hover:bg-slate-850/50 transition-colors ${
-                        isDeclined ? 'bg-rose-950/20' : ''
-                      }`}
-                    >
-                      {/* Station & Role */}
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-white text-sm">{role.name}</div>
-                        <div className="text-[11px] text-slate-400">{role.station}</div>
-                      </td>
-
-                      {/* Required Skill */}
-                      <td className="py-3.5 px-4 text-slate-300">
-                        <span className="font-mono text-[11px] text-slate-400">
-                          {role.skillRequired}
-                        </span>
-                      </td>
-
-                      {/* Assigned Member */}
-                      <td className="py-3.5 px-4">
-                        {assignedMember ? (
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-[10px] text-amber-400 shrink-0">
-                              {assignedMember.name.split(' ').map((n) => n[0]).join('')}
-                            </div>
-                            <div>
-                              <div className="font-medium text-slate-100 flex items-center gap-1.5">
-                                <span>{assignedMember.name}</span>
-                                {(Boolean(assignedMember.isLeader) ||
-                                  assignedMember.email.toLowerCase() === 'bernardoobuobi@gmail.com' ||
-                                  Boolean(availableAccounts.find((a) => a.memberId === assignedMember.id || a.email.toLowerCase() === assignedMember.email.toLowerCase())?.allowedPortals.includes('leadership'))
-                                ) && (
-                                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 font-semibold">
-                                    Leader
-                                  </span>
-                                )}
-                                {asg?.replacementForMemberId && (
-                                  <span className="text-[10px] text-amber-400 font-normal">
-                                    (Replacement)
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[11px] text-slate-400">{assignedMember.phone}</div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-slate-500 italic flex items-center gap-1.5">
-                            <HelpCircle className="w-3.5 h-3.5 text-slate-600" />
-                            <span>Unassigned station</span>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-3.5 px-4">
-                        {isConfirmed && (
-                          <div className="space-y-1">
-                            <span className="inline-flex items-center gap-1.5 text-emerald-400 font-medium">
-                              <CheckCircle2 className="w-4 h-4" /> Confirmed
-                            </span>
-                            {asg?.arrivalComment && (
-                              <div className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 rounded-lg space-y-0.5 max-w-xs">
-                                <div className="flex items-center gap-1 text-[10px] text-amber-400 font-semibold uppercase tracking-wider">
-                                  <Clock className="w-3 h-3" />
-                                  <span>Delayed Arrival {asg.estimatedArrivalTime ? `· ETA: ${asg.estimatedArrivalTime}` : ''}</span>
-                                </div>
-                                <div className="italic text-slate-300">
-                                  &ldquo;{asg.arrivalComment}&rdquo;
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {isPending && (
-                          <span className="inline-flex items-center gap-1.5 text-amber-400 font-medium">
-                            <Clock className="w-4 h-4" /> Response Pending
-                          </span>
-                        )}
-                        {isDeclined && (
-                          <div className="space-y-1">
-                            <span className="inline-flex items-center gap-1.5 text-rose-400 font-medium">
-                              <XCircle className="w-4 h-4" /> Declined: Needs Replacement
-                            </span>
-                            {asg.declineReason && (
-                              <div className="text-[10px] text-rose-300/80 italic">
-                                &ldquo;{asg.declineReason}&rdquo;
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {!assignedMember && (
-                          <span className="text-slate-500 font-medium">Vacant</span>
-                        )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* If declined, prominent Find Replacement button */}
-                          {isDeclined && (
-                            <button
-                              onClick={() => handleOpenReplacement(asg, role)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg shadow-sm transition-colors"
-                            >
-                              <UserCheck className="w-3.5 h-3.5" />
-                              <span>Find Replacement</span>
-                            </button>
-                          )}
-
-                          {/* Quick assign / change member dropdown */}
-                          <select
-                            value={assignedMember?.id || ''}
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                assignMemberToRole(selectedProgram.id, role.id, e.target.value);
-                              } else if (asg) {
-                                removeAssignment(asg.id);
-                              }
-                            }}
-                            className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 hover:border-slate-700 focus:outline-none focus:border-amber-500/50"
-                          >
-                            <option value="">{assignedMember ? 'Change Member...' : 'Assign Member...'}</option>
-                            {members
-                              .filter((m) => m.status === 'active')
-                              .map((m) => {
-                                const isLdr =
-                                  Boolean(m.isLeader) ||
-                                  m.email.toLowerCase() === 'bernardoobuobi@gmail.com' ||
-                                  Boolean(availableAccounts.find((a) => a.memberId === m.id || a.email.toLowerCase() === m.email.toLowerCase())?.allowedPortals.includes('leadership'));
-                                return (
-                                  <option key={m.id} value={m.id}>
-                                    {m.name} {isLdr ? '⭐ (Leader)' : ''} ({m.skillLevel})
-                                  </option>
-                                );
-                              })}
-                          </select>
-
-                          {/* WhatsApp alert */}
-                          {assignedMember && (
-                            <button
-                              onClick={() => handleOpenWhatsAppForMember(assignedMember.id, role.id)}
-                              title="Send WhatsApp assignment reminder"
-                              className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/20 rounded-lg transition-colors"
-                            >
-                              <MessageSquare className="w-4 h-4" />
-                            </button>
-                          )}
-
-                          {/* Remove Assignment */}
-                          {asg && (
-                            <button
-                              onClick={() => removeAssignment(asg.id)}
-                              title="Clear assignment"
-                              className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/20 rounded-lg transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      {/* Multi-Tier Reminders Protocol */}
-      <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-white">Automated Multi-Stage Reminder Protocol</h3>
-            <p className="text-xs text-slate-400">
-              MediaServe automatically dispatches alerts according to the church media schedule policy.
-            </p>
-          </div>
-          <button
-            onClick={() => triggerManualReminder(selectedProgram.id, 'Manual Leadership Broadcast')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg transition-colors"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>Trigger Broadcast To All Crew</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 pt-1">
-          <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-            <div className="text-xs font-semibold text-slate-300">1. 7 Days Prior</div>
-            <div className="text-[11px] text-slate-400">Initial Roster Notice</div>
-            <div className="text-[10px] text-emerald-400 font-mono">Active</div>
-          </div>
-          <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-            <div className="text-xs font-semibold text-slate-300">2. 3 Days Prior</div>
-            <div className="text-[11px] text-slate-400">Mid-Week Followup</div>
-            <div className="text-[10px] text-emerald-400 font-mono">Active</div>
-          </div>
-          <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-            <div className="text-xs font-semibold text-slate-300">3. 24 Hours Prior</div>
-            <div className="text-[11px] text-slate-400">Call Time & Station</div>
-            <div className="text-[10px] text-emerald-400 font-mono">Active</div>
-          </div>
-          <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-            <div className="text-xs font-semibold text-slate-300">4. 1 Hour Prior</div>
-            <div className="text-[11px] text-slate-400">Transit & Arrival</div>
-            <div className="text-[10px] text-amber-400 font-mono">Queued</div>
-          </div>
-          <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-            <div className="text-xs font-semibold text-slate-300">5. 15 Mins Prior</div>
-            <div className="text-[11px] text-slate-400">Soundcheck Check-in</div>
-            <div className="text-[10px] text-amber-400 font-mono">Queued</div>
-          </div>
-        </div>
-      </section>
-
-      {/* Create Program Modal */}
-      {createProgOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-6 text-slate-100 max-h-[90vh] overflow-y-auto space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-base font-semibold text-white">Create New Service / Program</h3>
-              <button
-                onClick={() => setCreateProgOpen(false)}
-                className="text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateProgram} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Service Title</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Sunday Celebration Service"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">Service Type</label>
-                  <select
-                    value={newServiceType}
-                    onChange={(e) => setNewServiceType(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50"
-                  >
-                    <option value="Sunday Divine Service">Sunday Divine Service</option>
-                    <option value="Sunday Second Service">Sunday Second Service</option>
-                    <option value="Wednesday Midweek">Wednesday Midweek</option>
-                    <option value="Friday Prophetic">Friday Prophetic</option>
-                    <option value="Youth Service">Youth Service</option>
-                    <option value="Special Event">Special Event / Convention</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">Date</label>
-                  <input
-                    type="date"
-                    value={newDate}
-                    onChange={(e) => setNewDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">Call Time</label>
-                  <input
-                    type="text"
-                    placeholder="06:45 AM"
-                    value={newCallTime}
-                    onChange={(e) => setNewCallTime(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">Start Time</label>
-                  <input
-                    type="text"
-                    placeholder="07:30 AM"
-                    value={newStartTime}
-                    onChange={(e) => setNewStartTime(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">End Time</label>
-                  <input
-                    type="text"
-                    placeholder="10:00 AM"
-                    value={newEndTime}
-                    onChange={(e) => setNewEndTime(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Sermon / Service Theme (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Walking in Supernatural Fruitfulness"
-                  value={newTheme}
-                  onChange={(e) => setNewTheme(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Duty Director (Lead)</label>
-                <select
-                  value={newDirector}
-                  onChange={(e) => setNewDirector(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500/50"
-                  required
-                >
-                  {leadersList.map((ldr) => (
-                    <option key={ldr.id} value={ldr.name}>
-                      {ldr.name} {ldr.email.toLowerCase() === 'bernardoobuobi@gmail.com' ? '(Super Admin)' : '(Leader)'}
-                    </option>
-                  ))}
-                  {!leadersList.some((l) => l.name === currentMember.name) && (
-                    <option value={currentMember.name}>{currentMember.name} (Current Leader)</option>
-                  )}
-                </select>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setCreateProgOpen(false)}
-                  className="px-4 py-2 text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg transition-colors"
-                >
-                  Create & Seed Roster
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* WhatsApp Modal */}
-      {selectedProgram && (
-        <WhatsAppReminderModal
-          isOpen={whatsAppModalOpen}
-          onClose={() => setWhatsAppModalOpen(false)}
-          program={selectedProgram}
-          members={members}
-          roles={roles}
-          selectedMemberId={whatsAppTargetMemberId}
-          selectedRoleId={whatsAppTargetRoleId}
-        />
-      )}
-
-      {/* Calendar Modal */}
-      {selectedProgram && (
-        <CalendarSyncModal
-          isOpen={calendarSyncOpen}
-          onClose={() => setCalendarSyncOpen(false)}
-          program={selectedProgram}
-        />
-      )}
-
-      {/* Replacement Modal */}
-      {activeReplacementData && selectedProgram && (
-        <ReplacementModal
-          isOpen={replacementModalOpen}
-          onClose={() => {
-            setReplacementModalOpen(false);
-            setActiveReplacementData(null);
-          }}
-          assignment={activeReplacementData.assignment}
-          role={activeReplacementData.role}
-          program={selectedProgram}
-        />
-      )}
-    </div>
+    <AppContext.Provider
+      value={{
+        isLoggedIn,
+        isSuperAdmin,
+        isLeader,
+        isPatron,
+        currentAccount,
+        currentMember,
+        activePortal,
+        availableAccounts: accounts,
+        switchAccount,
+        switchPortal,
+        logout,
+        updateAccountPrivileges,
+        toggleMemberLeadership,
+        checkEmailStatus,
+        registerNewMember,
+        setupFirstTimePassword,
+        loginWithPassword,
+        changePassword,
+        resetPasswordForMember,
+        whatsAppModalState,
+        closeWhatsAppModal,
+        openWhatsAppModalForAssignment,
+        roles,
+        members,
+        programs,
+        assignments,
+        announcements,
+        verse,
+        reminderConfig,
+        auditLogs,
+        confirmAttendance,
+        declineAttendance,
+        assignMemberToRole,
+        autoFillRoster,
+        removeAssignment,
+        replaceAssignment,
+        triggerManualReminder,
+        inactivityLoggedOut,
+        clearInactivityFlag,
+        inactivityTimeoutMinutes,
+        setInactivityTimeoutMinutes,
+        resetInactivityTimer,
+        showInactivityWarning,
+        inactivitySecondsRemaining,
+        pending24HourDuties,
+        automatedReminderModalOpen,
+        setAutomatedReminderModalOpen,
+        trigger24HourScan,
+        directConfirmData,
+        closeDirectConfirmModal,
+        createProgram,
+        updateProgram,
+        deleteProgram,
+        addMember,
+        updateMember,
+        deleteMember,
+        addAnnouncement,
+        deleteAnnouncement,
+        updateVerse,
+        updateReminderConfig,
+        resetToDefaults,
+        toastMessage,
+        showToast,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
   );
+};
+
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+  return context;
 };
