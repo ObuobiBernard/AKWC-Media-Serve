@@ -263,7 +263,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       joinedDate: new Date().toISOString().split('T')[0],
     };
 
-  const isSuperAdmin = currentAccount?.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+  const isSuperAdmin = currentAccount?.email?.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase();
   const isLeader =
     isSuperAdmin ||
     currentAccount?.allowedPortals?.includes('leadership') ||
@@ -393,15 +393,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const foundMem = members.find((m) => m.id === targetMemId);
         const foundProg = programs.find((p) => p.id === foundAsg?.programId);
         const foundRole = roles.find((r) => r.id === foundAsg?.roleId);
-        const targetAcc = accounts.find((a) => a.memberId === targetMemId);
 
-        if (targetAcc && foundMem && foundAsg && foundProg && foundRole) {
-          setCurrentAccountId(targetAcc.id);
-          setIsLoggedIn(true);
-          sessionStorage.setItem('mediaserve_auth', 'true');
-          sessionStorage.setItem('mediaserve_account_id', targetAcc.id);
-          setActivePortal('team');
-
+        if (foundMem && foundAsg && foundProg && foundRole) {
           setDirectConfirmData({
             asg: foundAsg,
             prog: foundProg,
@@ -416,7 +409,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {
       // Ignore URL parsing errors
     }
-  }, [assignments, members, programs, roles, accounts]);
+  }, [assignments, members, programs, roles]);
 
   const [automatedReminderModalOpen, setAutomatedReminderModalOpen] = useState(false);
   const [pending24HourDuties, setPending24HourDuties] = useState<Pending24HourDuty[]>([]);
@@ -627,7 +620,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!targetAcc) return { success: false, message: 'Account not found.' };
 
     const sanitizedPortals: PortalType[] = newAllowedPortals.filter((p) => {
-      if (p === 'admin') return targetAcc.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+      if (p === 'admin') return targetAcc.email.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase();
       return true;
     });
 
@@ -680,7 +673,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       acc = accounts.find((a) => a.memberId === mem.id);
     }
 
-    // Auto-create account record if missing
     if (!acc && mem) {
       const newAccountId = generateUniqueId('acc');
       acc = {
@@ -785,11 +777,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const autoFillRoster = async (programId: string) => {
     const unassignedRoles = roles.filter((r) => !assignments.some((a) => a.programId === programId && a.roleId === r.id && a.memberId));
+    const assignedMemberIds = new Set(assignments.filter((a) => a.programId === programId && a.memberId).map((a) => a.memberId as string));
     const newAssignments: RoleAssignment[] = [];
 
     for (const role of unassignedRoles) {
-      const suitableMem = members.find((m) => m.primaryRole === role.id || m.secondaryRoles?.includes(role.id));
+      const suitableMem = members.find((m) => !assignedMemberIds.has(m.id) && (m.primaryRole === role.id || m.secondaryRoles?.includes(role.id)));
       if (suitableMem) {
+        assignedMemberIds.add(suitableMem.id);
         newAssignments.push({ id: generateUniqueId('asg'), programId, roleId: role.id, memberId: suitableMem.id, status: 'pending', remindersSent: [] });
       }
     }
@@ -799,7 +793,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAssignments((prev) => [...prev, ...newAssignments]);
       showToast(`Auto-filled ${newAssignments.length} roles.`);
     } else {
-      showToast('No matching members found for unassigned roles.');
+      showToast('No matching unassigned members found for empty roles.');
     }
   };
 
