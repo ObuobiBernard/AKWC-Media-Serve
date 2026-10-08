@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ProgramService, RoleAssignment, MediaRole, TeamMember } from '../../types';
+import { ProgramService, RoleAssignment, MediaRole } from '../../types';
 import { X, UserCheck, AlertTriangle, Phone, Star } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -38,7 +38,7 @@ export const ReplacementModal: React.FC<ReplacementModalProps> = ({
     .map((m) => {
       const isAlreadyBooked = assignedMemberIds.has(m.id);
       const isPrimaryMatch = m.primaryRole === role.id;
-      const isSecondaryMatch = m.secondaryRoles.includes(role.id);
+      const isSecondaryMatch = m.secondaryRoles?.includes(role.id) || false;
       const isQualified = isPrimaryMatch || isSecondaryMatch;
 
       return {
@@ -49,16 +49,16 @@ export const ReplacementModal: React.FC<ReplacementModalProps> = ({
       };
     })
     .sort((a, b) => {
-      // Prioritize qualified and not booked members
+      // Prioritize available and qualified members
       if (a.isAlreadyBooked !== b.isAlreadyBooked) {
         return a.isAlreadyBooked ? 1 : -1;
       }
       return b.matchScore - a.matchScore;
     });
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!selectedNewMemberId) return;
-    replaceAssignment(assignment.id, selectedNewMemberId);
+    await replaceAssignment(assignment.id, selectedNewMemberId);
     onClose();
   };
 
