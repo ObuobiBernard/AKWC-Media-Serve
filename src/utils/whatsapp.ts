@@ -25,8 +25,11 @@ export function getLiveAppBaseUrl(overrideUrl?: string): string {
     url = overrideUrl;
   } else if (typeof window !== 'undefined') {
     const origin = window.location.origin;
+    // Capture the path in case the app is hosted in a sub-directory
+    const path = window.location.pathname === '/' ? '' : window.location.pathname.replace(/\/$/, '');
+    
     if (!origin.includes('ais-dev') && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
-      url = origin;
+      url = `${origin}${path}`;
     }
   }
 
