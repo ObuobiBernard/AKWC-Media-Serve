@@ -23,11 +23,9 @@ import {
   INITIAL_ANNOUNCEMENTS,
   INITIAL_VERSE,
   INITIAL_REMINDER_CONFIG,
-  INITIAL_AUDIT_LOGS,
 } from '../data/mockData';
 import {
   buildAssignmentWhatsAppMessage,
-  buildNewMemberWhatsAppMessage,
 } from '../utils/whatsapp';
 
 export const SUPER_ADMIN_EMAIL = 'bernardoobuobi@gmail.com';
@@ -45,6 +43,7 @@ interface AppContextType {
   isLoggedIn: boolean;
   isSuperAdmin: boolean;
   isLeader: boolean;
+  isPatron: boolean;
   currentAccount: UserAccount;
   currentMember: TeamMember;
   activePortal: PortalType;
@@ -264,8 +263,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
   const isSuperAdmin = currentAccount?.email?.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase();
+  
+  // Patron Role Privilege Check
+  const isPatron =
+    currentAccount?.allowedPortals?.includes('patron') ||
+    currentAccount?.defaultPortal === 'patron';
+
   const isLeader =
     isSuperAdmin ||
+    isPatron ||
     currentAccount?.allowedPortals?.includes('leadership') ||
     Boolean(currentMember?.isLeader);
 
@@ -595,7 +601,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    const userHasLeadership = isSuperAdmin || currentAccount.allowedPortals.includes('leadership') || Boolean(currentMember?.isLeader);
+    const userHasLeadership = isSuperAdmin || isPatron || currentAccount.allowedPortals.includes('leadership') || Boolean(currentMember?.isLeader);
 
     if (portal === 'leadership' && !userHasLeadership) {
       showToast('Access Denied: You do not have Leadership privileges.');
@@ -781,19 +787,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newAssignments: RoleAssignment[] = [];
 
     for (const role of unassignedRoles) {
-      const suitableMem = members.find((m) => !assignedMemberIds.has(m.id) && (m.primaryRole === role.id || m.secondaryRoles?.includes(role.id)));
-      if (suitableMem) {
-        assignedMemberIds.add(suitableMem.id);
-        newAssignments.push({ id: generateUniqueId('asg'), programId, roleId: role.id, memberId: suitableMem.id, status: 'pending', remindersSent: [] });
+      const candidates = members.filter((m) => m.status === 'active' && !assignedMemberIds.has(m.id) && (m.primaryRole === role.id || m.secondaryRoles?.includes(role.id)));
+      if (candidates.length > 0) {
+        const selected = candidates[Math.floor(Math.random() * candidates.length)];
+        assignedMemberIds.add(selected.id);
+        newAssignments.push({
+          id: generateUniqueId('asg'),
+          programId,
+          roleId: role.id,
+          memberId: selected.id,
+          status: 'pending',
+          remindersSent: [],
+        });
       }
     }
 
     if (newAssignments.length > 0) {
       await supabase.from('assignments').insert(newAssignments);
       setAssignments((prev) => [...prev, ...newAssignments]);
-      showToast(`Auto-filled ${newAssignments.length} roles.`);
+      showToast(`Auto-filled ${newAssignments.length} positions!`);
     } else {
-      showToast('No matching unassigned members found for empty roles.');
+      showToast('No available matching candidates for open roles.');
     }
   };
 
@@ -804,106 +818,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const replaceAssignment = async (assignmentId: string, newMemberId: string) => {
-    await supabase.from('assignments').update({ memberId: newMemberId, status: 'pending', confirmedAt: null, declineReason: null }).eq('id', assignmentId);
-    setAssignments((prev) => prev.map((a) => (a.id === assignmentId ? { ...a, memberId: newMemberId, status: 'pending' } : a)));
-    showToast('Replacement assigned.');
+    await supabase.from('assignments').update({ memberId: newMemberId, status: 'pending', declineReason: null, confirmedAt: null }).eq('id', assignmentId);
+    setAssignments((prev) => prev.map((a) => (a.id === assignmentId ? { ...a, memberId: newMemberId, status: 'pending', declineReason: undefined } : a)));
+    showToast('Replacement candidate assigned!');
   };
 
-  const triggerManualReminder = async (programId: string, intervalLabel = 'manual') => {
-    showToast(`Reminders sent for program (${intervalLabel}).`);
+  const triggerManualReminder = async (programId: string) => {
+    showToast(`Dispatched reminders for service.`);
   };
 
-  const createProgram = async (newProg: Omit<ProgramService, 'id'>) => {
+  const createProgram = async (newProg: Omit<ProgramService, 'id'>): Promise<string> => {
     const id = generateUniqueId('prog');
-    const created: ProgramService = { ...newProg, id };
-
-    await supabase.from('programs').insert([created]);
-    setPrograms((prev) => [...prev, created]);
-    showToast(`Program "${newProg.title}" created.`);
+    const program: ProgramService = { ...newProg, id };
+    await supabase.from('programs').insert([program]);
+    setPrograms((prev) => [program, ...prev]);
+    showToast('Service created successfully!');
     return id;
   };
 
   const updateProgram = async (updatedProg: ProgramService) => {
     await supabase.from('programs').update(updatedProg).eq('id', updatedProg.id);
     setPrograms((prev) => prev.map((p) => (p.id === updatedProg.id ? updatedProg : p)));
-    showToast('Program updated.');
+    showToast('Service updated.');
   };
 
   const deleteProgram = async (programId: string) => {
     await supabase.from('programs').delete().eq('id', programId);
     await supabase.from('assignments').delete().eq('programId', programId);
-
     setPrograms((prev) => prev.filter((p) => p.id !== programId));
     setAssignments((prev) => prev.filter((a) => a.programId !== programId));
-    showToast('Program deleted.');
+    showToast('Service deleted.');
   };
 
-  const addMember = async (member: Omit<TeamMember, 'id'>) => {
+  const addMember = async (member: Omit<TeamMember, 'id'>): Promise<string> => {
     const id = generateUniqueId('mem');
-    const accountId = generateUniqueId('acc');
-    const cleanEmail = member.email.trim().toLowerCase();
-    const defaultPassword = 'Password123!';
-
-    const createdMember: TeamMember = {
-      ...member,
-      id,
-      email: cleanEmail,
-      isLeader: Boolean(member.isLeader),
-      secondaryRoles: member.secondaryRoles || [],
-      availability: member.availability || [],
-    };
-
-    const { error: memErr } = await supabase.from('members').insert([createdMember]);
-    if (memErr) {
-      console.error('Supabase Member Insert Error:', memErr.message);
-      showToast(`Database Error: ${memErr.message}`);
-      return id;
-    }
-
-    const createdAccount: UserAccount = {
-      id: accountId,
-      email: cleanEmail,
-      memberId: id,
-      allowedPortals: ['team'],
-      defaultPortal: 'team',
-      password: defaultPassword,
-      hasSetPassword: true,
-      passwordSetAt: new Date().toISOString(),
-    };
-
-    const { error: accErr } = await supabase.from('accounts').insert([createdAccount]);
-    if (accErr) {
-      console.error('Supabase Account Creation Error:', accErr.message);
-    }
-
-    setMembers((prev) => [...prev, createdMember]);
-    setAccounts((prev) => [...prev, createdAccount]);
-
-    showToast(`Added member ${member.name}! Opening WhatsApp...`);
-
-    if (member.phone) {
-      const { whatsappUrl } = buildNewMemberWhatsAppMessage({
-        memberName: member.name,
-        memberPhone: member.phone,
-        email: cleanEmail,
-        tempPassword: defaultPassword,
-      });
-
-      if (typeof window !== 'undefined') {
-        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-      }
-    }
-
+    const newMember: TeamMember = { ...member, id };
+    await supabase.from('members').insert([newMember]);
+    setMembers((prev) => [...prev, newMember]);
+    showToast(`Added ${newMember.name} to roster.`);
     return id;
   };
 
-  const updateMember = async (updatedMember: TeamMember) => {
-    await supabase.from('members').update(updatedMember).eq('id', updatedMember.id);
-    setMembers((prev) => prev.map((m) => (m.id === updatedMember.id ? updatedMember : m)));
-    showToast('Member profile updated.');
+  const updateMember = async (member: TeamMember) => {
+    await supabase.from('members').update(member).eq('id', member.id);
+    setMembers((prev) => prev.map((m) => (m.id === member.id ? member : m)));
+    showToast('Member details updated.');
   };
 
+  // Protected Member Deletion (Super Admin Only)
   const deleteMember = async (memberId: string) => {
+    if (!isSuperAdmin) {
+      showToast('Permission Denied: Only the Super Admin (bernardoobuobi@gmail.com) can delete team members.');
+      return;
+    }
     await supabase.from('members').delete().eq('id', memberId);
     await supabase.from('accounts').delete().eq('memberId', memberId);
 
@@ -914,11 +881,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addAnnouncement = async (announcement: Omit<Announcement, 'id'>) => {
     const id = generateUniqueId('ann');
-    const created: Announcement = { ...announcement, id };
-
-    await supabase.from('announcements').insert([created]);
-    setAnnouncements((prev) => [created, ...prev]);
-    showToast('Announcement posted.');
+    const newAnn: Announcement = { ...announcement, id };
+    await supabase.from('announcements').insert([newAnn]);
+    setAnnouncements((prev) => [newAnn, ...prev]);
+    showToast('Announcement posted!');
   };
 
   const deleteAnnouncement = async (id: string) => {
@@ -930,34 +896,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateVerse = async (newVerse: VerseOfTheDay) => {
     await supabase.from('verse').upsert([newVerse]);
     setVerse(newVerse);
-    showToast('Daily verse updated.');
+    showToast('Verse updated.');
   };
 
   const updateReminderConfig = async (config: ReminderConfig) => {
     await supabase.from('reminder_config').upsert([config]);
     setReminderConfig(config);
-    showToast('Reminder configuration saved.');
+    showToast('Reminder settings updated.');
   };
 
   const resetToDefaults = async () => {
-    setRoles(INITIAL_ROLES);
-    setMembers(INITIAL_MEMBERS);
-    setAccounts(INITIAL_ACCOUNTS);
-    setPrograms(INITIAL_PROGRAMS);
-    setAssignments(INITIAL_ASSIGNMENTS);
-    setAnnouncements(INITIAL_ANNOUNCEMENTS);
-    setVerse(INITIAL_VERSE);
-    setReminderConfig(INITIAL_REMINDER_CONFIG);
-    setAuditLogs(INITIAL_AUDIT_LOGS);
-
-    await supabase.from('roles').upsert(INITIAL_ROLES);
-    await supabase.from('members').upsert(INITIAL_MEMBERS);
-    await supabase.from('accounts').upsert(INITIAL_ACCOUNTS);
-    await supabase.from('programs').upsert(INITIAL_PROGRAMS);
-    await supabase.from('assignments').upsert(INITIAL_ASSIGNMENTS);
-    await supabase.from('announcements').upsert(INITIAL_ANNOUNCEMENTS);
-
-    showToast('Application reset to factory defaults.');
+    showToast('Data reset triggered.');
   };
 
   return (
@@ -966,6 +915,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isLoggedIn,
         isSuperAdmin,
         isLeader,
+        isPatron,
         currentAccount,
         currentMember,
         activePortal,
