@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { CalendarSyncModal } from '../shared/CalendarSyncModal';
 import { AccountSwitcherModal } from '../auth/AccountSwitcherModal';
 import { LateConfirmationModal } from '../shared/LateConfirmationModal';
+import { supabase } from '../../lib/supabase';
 import {
   Calendar,
   Clock,
@@ -25,6 +26,17 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { ProgramService, RoleAssignment, MediaRole } from '../../types';
+
+const urlBase64ToUint8Array = (base64String: string) => {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+};
 
 export const TeamPortal: React.FC = () => {
   const {
@@ -51,6 +63,41 @@ export const TeamPortal: React.FC = () => {
     Boolean(currentMember.isLeader);
 
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+
+  const subscribeToNotifications = async () => {
+    if (!('serviceWorker' in navigator)) {
+      showToast("Your browser doesn't support background notifications.");
+      return;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      const PUBLIC_KEY = "BLx...your_key_here...aBc"; // Replace with your generated VAPID public key
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(PUBLIC_KEY),
+      });
+
+      const subData = JSON.parse(JSON.stringify(subscription));
+
+      const { error } = await supabase.from('push_subscriptions').upsert(
+        {
+          member_id: currentMember.id,
+          endpoint: subData.endpoint,
+          auth: subData.keys.auth,
+          p256dh: subData.keys.p256dh,
+        },
+        { onConflict: 'endpoint' }
+      );
+
+      if (error) throw error;
+      showToast('You will now receive notifications for your duties!');
+    } catch (error) {
+      console.error('Error turning on notifications:', error);
+      showToast('Could not enable notifications. Please check your browser permissions.');
+    }
+  };
 
   // Find assignments for the logged-in member
   const myAssignments = assignments.filter((a) => a.memberId === currentMember.id);
@@ -151,6 +198,25 @@ export const TeamPortal: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
+      {/* Push Notification Button Banner */}
+      <section className="p-4 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+            <Bell className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="font-bold text-white text-sm">Enable Push Notifications</div>
+            <p className="text-xs text-slate-400">Receive instant alerts on your device when scheduled for duties.</p>
+          </div>
+        </div>
+        <button
+          onClick={subscribeToNotifications}
+          className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-all shrink-0"
+        >
+          Enable Duty Notifications
+        </button>
+      </section>
+
       {/* Leadership Access Notification Banner */}
       {userHasLeadership && (
         <section className="p-4 sm:p-5 bg-gradient-to-r from-blue-950/50 via-slate-900 to-amber-950/30 border border-blue-500/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg shadow-blue-950/20 animate-in fade-in">
@@ -184,7 +250,7 @@ export const TeamPortal: React.FC = () => {
       {/* Hero Welcome Banner */}
       <section className="relative overflow-hidden rounded-2xl bg-slate-900 border border-slate-800 p-6 sm:p-8">
         <img
-          src="/src/assets/images/church_media_booth_1791063344649.jpg"
+          src="/church_media_booth_1791063344649.jpg"
           alt="AKWC Media Production Booth"
           className="absolute inset-0 w-full h-full object-cover opacity-15 pointer-events-none select-none"
           referrerPolicy="no-referrer"
@@ -648,151 +714,124 @@ export const TeamPortal: React.FC = () => {
               </button>
             </div>
 
-            <blockquote className="space-y-2 border-l-2 border-amber-500/80 pl-4 py-1">
-              <p className="text-base sm:text-lg font-medium text-slate-100 italic leading-relaxed">
+            <blockquote className="space-y-2">
+              <p className="text-base sm:text-lg font-serif italic text-white leading-relaxed">
                 &ldquo;{verse.verse}&rdquo;
               </p>
-              <footer className="text-xs font-semibold text-amber-400 not-italic">
+              <footer className="text-xs font-semibold text-amber-300">
                 — {verse.reference}
               </footer>
             </blockquote>
 
-            <div className="pt-2 border-t border-slate-800/80 space-y-1">
-              <div className="text-xs font-medium text-slate-300">Ministry Reflection:</div>
-              <p className="text-xs text-slate-400 leading-relaxed">{verse.reflection}</p>
+            <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-1">
+              <div className="text-[11px] font-semibold text-amber-400">Media Ministry Reflection</div>
+              <p className="text-xs text-slate-300 leading-relaxed">{verse.reflection}</p>
             </div>
           </div>
 
-          {/* AKWC Announcements Board */}
+          {/* Announcements Card */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-7 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <Bell className="w-4 h-4 text-amber-400" />
-                <span>Media Team Announcements</span>
-              </h3>
-              <span className="text-xs text-slate-500">{announcements.length} Active Bulletins</span>
+              <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
+                AKWC Announcements & Updates
+              </span>
+              <span className="text-[11px] text-slate-400">{announcements.length} Active</span>
             </div>
 
-            <div className="space-y-3">
-              {announcements.map((ann) => (
-                <div
-                  key={ann.id}
-                  className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-2"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-slate-200">{ann.title}</span>
-                    {ann.priority === 'urgent' && (
-                      <span className="px-2 py-0.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-semibold rounded-md uppercase tracking-wider shrink-0">
-                        Urgent
-                      </span>
-                    )}
+            <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
+              {announcements.length > 0 ? (
+                announcements.map((ann) => (
+                  <div key={ann.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-white">{ann.title}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">{ann.date}</span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">{ann.content}</p>
+                    <div className="text-[10px] text-amber-400/80 font-medium">Posted by {ann.author}</div>
                   </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">{ann.content}</p>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-900">
-                    <span>{ann.author}</span>
-                    <span>{ann.date}</span>
-                  </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <div className="text-xs text-slate-500 italic py-8 text-center">No active announcements.</div>
+              )}
             </div>
           </div>
         </div>
       </section>
 
-      {/* Decline Reason Modal */}
-      {declineModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 text-slate-100 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-white">Decline Media Assignment</h3>
-                <p className="text-xs text-slate-400">Alert leadership so a replacement can be assigned</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  Select Reason
-                </label>
-                <select
-                  value={declineReason}
-                  onChange={(e) => setDeclineReason(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500/50"
-                >
-                  <option value="Work schedule conflict">Work schedule / Shift conflict</option>
-                  <option value="Family commitment / Travel">Family commitment / Traveling out of Accra</option>
-                  <option value="Health / Feeling unwell">Health / Feeling unwell</option>
-                  <option value="Academic exam / School deadline">Academic exam / School commitment</option>
-                  <option value="Emergency">Unexpected Emergency</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  Additional Note (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Provide context for the director..."
-                  value={declineCustomNote}
-                  onChange={(e) => setDeclineCustomNote(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setDeclineModalOpen(false)}
-                className="px-4 py-2 text-xs text-slate-400 hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submitDecline}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs rounded-lg transition-colors"
-              >
-                Confirm Decline & Request Replacement
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Calendar Sync Modal */}
-      {selectedCalendarDuty && (
+      {/* Modals */}
+      {calendarSyncOpen && selectedCalendarDuty && (
         <CalendarSyncModal
           isOpen={calendarSyncOpen}
           onClose={() => setCalendarSyncOpen(false)}
           program={selectedCalendarDuty.prog}
           role={selectedCalendarDuty.role}
-          assignment={selectedCalendarDuty.asg}
         />
       )}
 
-      {/* Late Arrival Confirmation Modal */}
-      {lateModalData && (
+      {lateModalOpen && lateModalData && (
         <LateConfirmationModal
           isOpen={lateModalOpen}
-          onClose={() => {
-            setLateModalOpen(false);
-            setLateModalData(null);
-          }}
+          onClose={() => setLateModalOpen(false)}
           assignmentId={lateModalData.asgId}
           program={lateModalData.prog}
           role={lateModalData.role}
         />
       )}
 
-      {/* Password Setup / Account Switcher Modal */}
-      <AccountSwitcherModal
-        isOpen={passwordModalOpen}
-        onClose={() => setPasswordModalOpen(false)}
-      />
+      {/* Decline Reason Modal */}
+      {declineModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="text-lg font-bold text-white">Decline Duty Assignment</h3>
+            <p className="text-xs text-slate-300">
+              Please select a reason for declining. This alerts leadership so a replacement candidate can be assigned immediately.
+            </p>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-400">Reason</label>
+              <select
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500/50"
+              >
+                <option value="Work schedule conflict">Work schedule conflict</option>
+                <option value="Health or illness">Health or illness</option>
+                <option value="Traveling / Out of town">Traveling / Out of town</option>
+                <option value="Family emergency">Family emergency</option>
+                <option value="Other personal reason">Other personal reason</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-400">Additional Note (Optional)</label>
+              <textarea
+                value={declineCustomNote}
+                onChange={(e) => setDeclineCustomNote(e.target.value)}
+                placeholder="Provide short details for production leadership..."
+                rows={3}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-amber-500/50 resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeclineModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitDecline}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs rounded-xl transition-all shadow-md shadow-rose-950/50"
+              >
+                Confirm Decline & Notify Leadership
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
