@@ -1,25 +1,19 @@
-self.addEventListener('push', function(event) {
-  // Grab the message data sent by Supabase
+// Service Worker for Web Push Notifications
+self.addEventListener('push', function (event) {
   const data = event.data ? event.data.json() : {};
-  
-  // Design how the pop-up looks on the phone
+  const title = data.title || 'AKWC Media Reminder';
   const options = {
-    body: data.body || 'You have a new media duty assignment.',
-    icon: '/icon-192x192.png', // This should be your app logo in the public folder
-    vibrate: [200, 100, 200],
-    data: { url: data.url || '/' } // Where to take them when they tap it
+    body: data.body || 'You have an upcoming media service duty.',
+    icon: '/favicon.ico',
+    badge: '/favicon.ico',
   };
 
-  // Show the notification!
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'AKWC Media', options)
-  );
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// When they click the notification, open the app
-self.addEventListener('notificationclick', function(event) {
+self.addEventListener('notificationclick', function (event) {
   event.notification.close();
-  if (event.notification.data && event.notification.data.url) {
-    event.waitUntil(clients.openWindow(event.notification.data.url));
-  }
+  event.waitUntil(
+    clients.openWindow('/')
+  );
 });
