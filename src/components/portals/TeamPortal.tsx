@@ -72,7 +72,7 @@ export const TeamPortal: React.FC = () => {
 
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
-      const PUBLIC_KEY = "BLx...your_key_here...aBc"; // Replace with your generated VAPID public key
+      const PUBLIC_KEY = "BICjTcF-HdOuOAUH7VjRSOcE9PbIBiHrP9o1mId2d0ZZsBuCxjgTbBTgXXTkiYVmXbtd3M_CqrVyRviF1B_lQKc"; // Replace with your generated VAPID public key
 
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
