@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://obuobibernard.github.io/AFA_Fresh_Eggs/sitemap.xml

@@ -60,6 +60,7 @@ export const LeadershipPortal: React.FC = () => {
       date: new Date().toISOString().split('T')[0],
       author: 'Media Leadership',
       priority: 'normal',
+      tag: 'Ministry',
     });
 
     setAnnouncementTitle('');
@@ -73,12 +74,13 @@ export const LeadershipPortal: React.FC = () => {
 
     await createProgram({
       title: progTitle.trim(),
+      serviceType: 'Sunday Divine Service',
       date: progDate,
       callTime: progCallTime,
       startTime: progStartTime,
       endTime: progEndTime,
       location: progLocation,
-      status: 'upcoming',
+      directorName: 'Bernard Owusu Obuobi',
     });
 
     setProgTitle('');

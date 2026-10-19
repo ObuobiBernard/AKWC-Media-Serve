@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/layout/Navbar';
 import { LoginPage } from './components/auth/LoginPage';
@@ -15,6 +15,7 @@ import { WhatsAppNotificationModal } from './components/shared/WhatsAppNotificat
 import { InactivityWarningModal } from './components/shared/InactivityWarningModal';
 import { DirectConfirmationModal } from './components/shared/DirectConfirmationModal';
 import { Automated24HourReminderModal } from './components/shared/Automated24HourReminderModal';
+import { LegalModal, LegalTab } from './components/shared/LegalModal';
 
 const MainContent: React.FC = () => {
   const { activePortal } = useApp();
@@ -38,10 +39,19 @@ const AppShell: React.FC = () => {
     pending24HourDuties,
   } = useApp();
 
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalTab, setLegalTab] = useState<LegalTab>('privacy');
+
+  const openLegal = (tab: LegalTab) => {
+    setLegalTab(tab);
+    setLegalModalOpen(true);
+  };
+
   if (!isLoggedIn) {
     return (
       <div className="w-full min-h-screen overflow-x-hidden bg-slate-950">
         <LoginPage />
+        {directConfirmData && <DirectConfirmationModal />}
         <ToastNotification />
       </div>
     );
@@ -53,12 +63,26 @@ const AppShell: React.FC = () => {
       <MainContent />
       
       <footer className="mt-auto border-t border-slate-900 bg-slate-950/80 py-4 sm:py-6 px-3 sm:px-8 text-center text-xs text-slate-500 shrink-0">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5 text-center sm:text-left">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
           <div>
             <span className="font-semibold text-slate-400">MediaServe</span> · COP Akweteyman Worship Center (AKWC) Media Ministry
           </div>
-          <div className="text-[11px] text-slate-600">
-            Workflow: Create → Assign → Remind → Confirm → Monitor
+          <div className="flex items-center gap-3 text-[11px] text-slate-400">
+            <button onClick={() => openLegal('privacy')} className="hover:text-amber-400 transition-colors">
+              Privacy
+            </button>
+            <span>·</span>
+            <button onClick={() => openLegal('terms')} className="hover:text-amber-400 transition-colors">
+              Terms
+            </button>
+            <span>·</span>
+            <button onClick={() => openLegal('cookies')} className="hover:text-amber-400 transition-colors">
+              Cookies
+            </button>
+            <span>·</span>
+            <button onClick={() => openLegal('ministry')} className="hover:text-amber-400 transition-colors">
+              Ministry Charter
+            </button>
           </div>
         </div>
       </footer>
@@ -66,22 +90,15 @@ const AppShell: React.FC = () => {
       <WhatsAppNotificationModal />
       <InactivityWarningModal />
 
-      {directConfirmData && (
-        <DirectConfirmationModal
-          isOpen={Boolean(directConfirmData)}
-          onClose={closeDirectConfirmModal}
-          assignment={directConfirmData.asg}
-          program={directConfirmData.prog}
-          role={directConfirmData.role}
-          member={directConfirmData.member}
-        />
-      )}
+      {directConfirmData && <DirectConfirmationModal />}
 
-      <Automated24HourReminderModal
-        isOpen={automatedReminderModalOpen}
-        onClose={() => setAutomatedReminderModalOpen(false)}
-        pendingDuties={pending24HourDuties}
+      <LegalModal
+        isOpen={legalModalOpen}
+        onClose={() => setLegalModalOpen(false)}
+        defaultTab={legalTab}
       />
+
+      <Automated24HourReminderModal />
 
       <ToastNotification />
     </div>

@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { RegisterMemberData, SkillLevel } from '../../types';
+import { PasswordResetModal } from './PasswordResetModal';
+import { LegalModal, LegalTab } from '../shared/LegalModal';
+import { SupabaseConfigModal } from '../shared/SupabaseConfigModal';
 import {
   Lock,
   Mail,
@@ -18,6 +21,10 @@ import {
   LogIn,
   Clock,
   X,
+  ShieldCheck,
+  FileText,
+  Cookie,
+  HeartHandshake,
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
@@ -50,6 +57,17 @@ export const LoginPage: React.FC = () => {
     primaryRoleName?: string;
   } | null>(null);
 
+  // Password reset modal state
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetIdentifier, setResetIdentifier] = useState('');
+
+  // Legal modal state
+  const [showLegalModal, setShowLegalModal] = useState(false);
+  const [legalTab, setLegalTab] = useState<LegalTab>('privacy');
+
+  // Supabase modal state
+  const [showSupabaseModal, setShowSupabaseModal] = useState(false);
+
   // Registration form state
   const [regData, setRegData] = useState<RegisterMemberData>({
     name: '',
@@ -66,6 +84,7 @@ export const LoginPage: React.FC = () => {
   });
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
+  const [regConsentGiven, setRegConsentGiven] = useState(false);
   const [regError, setRegError] = useState('');
 
   // Check email when user clicks "Continue" or presses enter
@@ -86,6 +105,22 @@ export const LoginPage: React.FC = () => {
 
     if (status.status === 'not_found') {
       setAuthError('We could not find this email on the AKWC Media Team roster.');
+    }
+  };
+
+  // Helper to trigger browser credential saving
+  const savePasswordToBrowser = async (username: string, pass: string, displayName?: string) => {
+    if (typeof window !== 'undefined' && 'PasswordCredential' in window && (window as any).PasswordCredential) {
+      try {
+        const cred = new (window as any).PasswordCredential({
+          id: username,
+          password: pass,
+          name: displayName || username,
+        });
+        await navigator.credentials?.store(cred);
+      } catch {
+        // Ignore browser credential store exceptions
+      }
     }
   };
 
@@ -115,6 +150,7 @@ export const LoginPage: React.FC = () => {
       const res = await setupFirstTimePassword(clean, newPassword);
       if (res.success) {
         setAuthSuccess(res.message);
+        await savePasswordToBrowser(clean, newPassword, emailStatus.memberName);
       } else {
         setAuthError(res.message);
       }
@@ -127,6 +163,7 @@ export const LoginPage: React.FC = () => {
       const res = await loginWithPassword(clean, password);
       if (res.success) {
         setAuthSuccess(res.message);
+        await savePasswordToBrowser(clean, password, emailStatus.memberName);
       } else {
         setAuthError(res.message);
       }
@@ -158,6 +195,10 @@ export const LoginPage: React.FC = () => {
       setRegError('Passwords do not match.');
       return;
     }
+    if (!regConsentGiven) {
+      setRegError('Please check the consent box to agree to the AKWC Media Ministry data guidelines.');
+      return;
+    }
 
     const cleanEmail = regData.email.trim().toLowerCase();
     const normalizeDigits = (p: string) => {
@@ -186,7 +227,9 @@ export const LoginPage: React.FC = () => {
     }
 
     const res = await registerNewMember(regData);
-    if (!res.success) {
+    if (res.success) {
+      await savePasswordToBrowser(cleanEmail, regData.password, regData.name);
+    } else {
       setRegError(res.message);
     }
   };
@@ -207,6 +250,11 @@ export const LoginPage: React.FC = () => {
     setRegData((prev) => ({ ...prev, email: email.trim() }));
     setMode('register');
     setAuthError('');
+  };
+
+  const openLegalWithTab = (tab: LegalTab) => {
+    setLegalTab(tab);
+    setShowLegalModal(true);
   };
 
   return (
@@ -298,10 +346,15 @@ export const LoginPage: React.FC = () => {
         <div className="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl shadow-black/40">
           {mode === 'signin' ? (
             /* ================= SIGN IN TAB ================= */
-            <form onSubmit={handleSignInSubmit} className="space-y-4">
+            <form
+              method="POST"
+              action="#"
+              onSubmit={handleSignInSubmit}
+              className="space-y-4"
+            >
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <label htmlFor="username" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                     <Mail className="w-3.5 h-3.5 text-amber-400" />
                     <span>Email Address</span>
                   </label>
@@ -325,6 +378,9 @@ export const LoginPage: React.FC = () => {
                 <div className="relative">
                   <input
                     type="email"
+                    name="username"
+                    id="username"
+                    autoComplete="username"
                     required
                     value={email}
                     disabled={emailChecked}
@@ -334,21 +390,37 @@ export const LoginPage: React.FC = () => {
                       setEmailStatus(null);
                       setAuthError('');
                     }}
-                    placeholder="e.g. osei397@gmail.com"
+                    placeholder="e.g. bernardoobuobi@gmail.com"
                     className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 disabled:bg-slate-950/50 disabled:text-slate-400 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
                   />
                 </div>
               </div>
 
               {!emailChecked && (
-                <button
-                  type="button"
-                  onClick={handleCheckEmail}
-                  className="w-full mt-2 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm"
-                >
-                  <span>Continue</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                <div className="space-y-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleCheckEmail}
+                    className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm"
+                  >
+                    <span>Continue</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetIdentifier(email);
+                        setShowResetModal(true);
+                      }}
+                      className="text-xs text-slate-400 hover:text-amber-400 transition-colors inline-flex items-center gap-1.5"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Reset password using email or phone verification</span>
+                    </button>
+                  </div>
+                </div>
               )}
 
               {emailChecked && emailStatus && (
@@ -366,19 +438,22 @@ export const LoginPage: React.FC = () => {
                             <span className="font-semibold text-white">
                               {emailStatus.primaryRoleName || 'Media Production'}
                             </span>{' '}
-                            on the AKWC Media roster. As this is your first time logging in, please create a password to activate your account.
+                            on the AKWC Media roster. Please create your private password. Your browser will prompt you to save it.
                           </div>
                         </div>
                       </div>
 
                       <div>
-                        <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1.5">
+                        <label htmlFor="new-password-setup" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1.5">
                           <KeyRound className="w-3.5 h-3.5 text-amber-400" />
                           <span>Create Your Password</span>
                         </label>
                         <div className="relative">
                           <input
                             type={showPassword ? 'text' : 'password'}
+                            name="new-password"
+                            id="new-password-setup"
+                            autoComplete="new-password"
                             required
                             value={newPassword}
                             onChange={(e) => setNewPassword(e.target.value)}
@@ -396,12 +471,15 @@ export const LoginPage: React.FC = () => {
                       </div>
 
                       <div>
-                        <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1.5">
+                        <label htmlFor="confirm-password-setup" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1.5">
                           <Lock className="w-3.5 h-3.5 text-amber-400" />
                           <span>Confirm Password</span>
                         </label>
                         <input
                           type={showPassword ? 'text' : 'password'}
+                          name="confirm-password"
+                          id="confirm-password-setup"
+                          autoComplete="new-password"
                           required
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
@@ -439,14 +517,27 @@ export const LoginPage: React.FC = () => {
 
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                          <label htmlFor="password" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                             <Lock className="w-3.5 h-3.5 text-amber-400" />
                             <span>Password</span>
                           </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResetIdentifier(email);
+                              setShowResetModal(true);
+                            }}
+                            className="text-[11px] text-amber-400 hover:text-amber-300 hover:underline"
+                          >
+                            Forgot Password?
+                          </button>
                         </div>
                         <div className="relative">
                           <input
                             type={showPassword ? 'text' : 'password'}
+                            name="password"
+                            id="password"
+                            autoComplete="current-password"
                             required
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
@@ -470,13 +561,27 @@ export const LoginPage: React.FC = () => {
                         <LogIn className="w-3.5 h-3.5" />
                         <span>Sign In</span>
                       </button>
+
+                      <div className="text-center pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setResetIdentifier(email);
+                            setShowResetModal(true);
+                          }}
+                          className="text-xs text-slate-400 hover:text-amber-400 transition-colors inline-flex items-center gap-1.5"
+                        >
+                          <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Reset password using email or phone verification</span>
+                        </button>
+                      </div>
                     </div>
                   )}
 
                   {emailStatus.status === 'not_found' && (
                     <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl text-center space-y-3">
                       <div className="text-xs text-slate-300">
-                        Are you new to the AKWC Media Ministry? You can complete the onboarding questions to create your account.
+                        Are you new to the AKWC Media Ministry? You can complete the onboarding registration to create your account.
                       </div>
                       <button
                         type="button"
@@ -512,7 +617,7 @@ export const LoginPage: React.FC = () => {
                   <span>AKWC Media Team Registration</span>
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  All fields correspond to the AKWC Media Ministry onboarding spreadsheet.
+                  All fields correspond to the AKWC Media Ministry onboarding roster.
                 </p>
               </div>
 
@@ -542,10 +647,11 @@ export const LoginPage: React.FC = () => {
                     required
                     value={regData.email}
                     onChange={(e) => setRegData({ ...regData, email: e.target.value })}
-                    placeholder="e.g. member@gmail.com"
+                    placeholder="you@example.com"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                   />
                 </div>
+
                 <div>
                   <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
                     <Phone className="w-3.5 h-3.5 text-amber-400" />
@@ -556,73 +662,65 @@ export const LoginPage: React.FC = () => {
                     required
                     value={regData.phone}
                     onChange={(e) => setRegData({ ...regData, phone: e.target.value })}
-                    placeholder="e.g. 0543515464"
+                    placeholder="0543515464"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1.5">Gender *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['Male', 'Female'] as const).map((g) => (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => setRegData({ ...regData, gender: g })}
-                      className={`py-1.5 text-xs font-medium rounded-xl border transition-all ${
-                        regData.gender === g
-                          ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                      }`}
-                    >
-                      {g}
-                    </button>
-                  ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Gender *</label>
+                  <select
+                    value={regData.gender}
+                    onChange={(e) => setRegData({ ...regData, gender: e.target.value as 'Male' | 'Female' })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Primary Station *</label>
+                  <select
+                    value={regData.primaryRole}
+                    onChange={(e) => setRegData({ ...regData, primaryRole: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
+                  >
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
-                  <Video className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Primary Role / Department *</span>
-                </label>
-                <select
-                  value={regData.primaryRole}
-                  onChange={(e) => setRegData({ ...regData, primaryRole: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
-                >
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  Secondary Roles / Other Areas of Interest (Optional)
+                  Secondary Stations / Capabilities (Optional)
                 </label>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="grid grid-cols-2 gap-1.5 p-2 bg-slate-950 border border-slate-800 rounded-xl max-h-32 overflow-y-auto">
                   {roles
                     .filter((r) => r.id !== regData.primaryRole)
                     .map((r) => {
-                      const isSelected = regData.secondaryRoles.includes(r.id);
+                      const checked = regData.secondaryRoles.includes(r.id);
                       return (
-                        <button
+                        <label
                           key={r.id}
-                          type="button"
-                          onClick={() => toggleSecondaryRole(r.id)}
-                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all ${
-                            isSelected
-                              ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
-                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                          className={`flex items-center gap-2 p-1.5 rounded-lg text-[11px] cursor-pointer transition-colors ${
+                            checked ? 'bg-amber-500/20 text-amber-200' : 'text-slate-400 hover:text-white'
                           }`}
                         >
-                          {isSelected && '✓ '}
-                          {r.name}
-                        </button>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSecondaryRole(r.id)}
+                            className="rounded border-slate-700 text-amber-500 focus:ring-0"
+                          />
+                          <span className="truncate">{r.name}</span>
+                        </label>
                       );
                     })}
                 </div>
@@ -630,66 +728,46 @@ export const LoginPage: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Skill Level / Experience *
-                  </label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Skill Proficiency *</label>
                   <select
                     value={regData.skillLevel}
                     onChange={(e) => {
-                      const level = e.target.value as SkillLevel;
-                      let raw = 'Intermediate – Can assist and operate with guidance';
-                      if (level === 'Apprentice') raw = 'Beginner – Willing to learn';
-                      if (level === 'Senior') raw = 'Advanced – Can operate independently';
-                      if (level === 'Lead') raw = 'Expert – Can train others / Lead a team';
-                      setRegData({ ...regData, skillLevel: level, rawSkillDescription: raw });
+                      const val = e.target.value as SkillLevel;
+                      let desc = '';
+                      if (val === 'Apprentice') desc = 'Apprentice – Willing to learn and assist';
+                      else if (val === 'Intermediate') desc = 'Intermediate – Can assist with guidance';
+                      else if (val === 'Senior') desc = 'Senior – Can operate independently';
+                      else desc = 'Lead – Can train others / Lead station';
+                      setRegData({ ...regData, skillLevel: val, rawSkillDescription: desc });
                     }}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
                   >
-                    <option value="Apprentice">Beginner – Willing to learn</option>
-                    <option value="Intermediate">Intermediate – Can assist with guidance</option>
-                    <option value="Senior">Advanced – Can operate independently</option>
-                    <option value="Lead">Expert – Can train others / Lead team</option>
+                    <option value="Apprentice">Apprentice / Beginner</option>
+                    <option value="Intermediate">Intermediate</option>
+                    <option value="Senior">Senior (Independent)</option>
+                    <option value="Lead">Lead / Expert (Trainer)</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Availability *
-                  </label>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Availability *</label>
                   <select
                     value={regData.availability}
-                    onChange={(e) =>
-                      setRegData({
-                        ...regData,
-                        availability: e.target.value as 'Flexible' | 'Both Sundays & Weekdays' | 'Sundays only',
-                      })
-                    }
+                    onChange={(e) => setRegData({ ...regData, availability: e.target.value as 'Flexible' | 'Both Sundays & Weekdays' | 'Sundays only' })}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
                   >
-                    <option value="Flexible">Flexible (Sundays & Rehearsals)</option>
+                    <option value="Flexible">Flexible</option>
                     <option value="Both Sundays & Weekdays">Both Sundays & Weekdays</option>
                     <option value="Sundays only">Sundays only</option>
                   </select>
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  Additional Notes / Experience / Equipment Known (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  value={regData.notes}
-                  onChange={(e) => setRegData({ ...regData, notes: e.target.value })}
-                  placeholder="e.g. Experienced with vMix, Canon DSLRs, EasyWorship 7, Soundcraft consoles..."
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 resize-none"
-                />
-              </div>
-
+              {/* Password setup for new account */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1 mb-1">
-                    <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
+                    <Lock className="w-3.5 h-3.5 text-amber-400" />
                     <span>Create Password *</span>
                   </label>
                   <div className="relative">
@@ -712,8 +790,8 @@ export const LoginPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1 mb-1">
-                    <Lock className="w-3.5 h-3.5 text-amber-400" />
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-1">
+                    <KeyRound className="w-3.5 h-3.5 text-amber-400" />
                     <span>Confirm Password *</span>
                   </label>
                   <input
@@ -725,6 +803,42 @@ export const LoginPage: React.FC = () => {
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                   />
                 </div>
+              </div>
+
+              {/* Ministry Consent Checkbox */}
+              <div className="pt-1">
+                <label className="flex items-start gap-2.5 p-3 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={regConsentGiven}
+                    onChange={(e) => setRegConsentGiven(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-700 text-amber-500 focus:ring-0"
+                  />
+                  <div className="text-[11px] text-slate-400 leading-relaxed">
+                    I agree to the COP Akweteyman Worship Center{' '}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openLegalWithTab('terms');
+                      }}
+                      className="text-amber-400 hover:underline font-semibold"
+                    >
+                      Terms of Service
+                    </button>{' '}
+                    and consent to storing my contact information in accordance with the Ghana Data Protection Act 2012 /{' '}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openLegalWithTab('privacy');
+                      }}
+                      className="text-amber-400 hover:underline font-semibold"
+                    >
+                      Privacy Policy
+                    </button>.
+                  </div>
+                </label>
               </div>
 
               {regError && (
@@ -746,9 +860,73 @@ export const LoginPage: React.FC = () => {
         </div>
       </div>
 
-      <footer className="py-4 text-center text-xs text-slate-600">
-        <div>MediaServe · Church of Pentecost Akweteyman Worship Center (AKWC)</div>
+      {/* Footer with Compliance Links */}
+      <footer className="py-4 text-center text-xs text-slate-500 border-t border-slate-900 bg-slate-950/80">
+        <div className="max-w-lg mx-auto px-4 space-y-1.5">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-slate-400">
+            <button
+              type="button"
+              onClick={() => openLegalWithTab('privacy')}
+              className="hover:text-amber-400 transition-colors"
+            >
+              Privacy Policy
+            </button>
+            <span>·</span>
+            <button
+              type="button"
+              onClick={() => openLegalWithTab('terms')}
+              className="hover:text-amber-400 transition-colors"
+            >
+              Terms of Service
+            </button>
+            <span>·</span>
+            <button
+              type="button"
+              onClick={() => openLegalWithTab('cookies')}
+              className="hover:text-amber-400 transition-colors"
+            >
+              Cookie Notice
+            </button>
+            <span>·</span>
+            <button
+              type="button"
+              onClick={() => openLegalWithTab('ministry')}
+              className="hover:text-amber-400 transition-colors"
+            >
+              Ministry Charter
+            </button>
+            <span>·</span>
+            <button
+              type="button"
+              onClick={() => setShowSupabaseModal(true)}
+              className="hover:text-emerald-400 text-emerald-400/90 font-medium transition-colors"
+            >
+              Supabase DB
+            </button>
+          </div>
+          <div className="text-[10px] text-slate-600">
+            MediaServe · COP Akweteyman Worship Center (Achimota Area, Accra)
+          </div>
+        </div>
       </footer>
+
+      {/* Modals */}
+      <PasswordResetModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+        initialIdentifier={resetIdentifier}
+      />
+
+      <LegalModal
+        isOpen={showLegalModal}
+        onClose={() => setShowLegalModal(false)}
+        defaultTab={legalTab}
+      />
+
+      <SupabaseConfigModal
+        isOpen={showSupabaseModal}
+        onClose={() => setShowSupabaseModal(false)}
+      />
     </div>
   );
 };

@@ -1,0 +1,10 @@
+/* TEAM */
+Media Director: Bernard Owusu Obuobi
+Email: bernardoobuobi@gmail.com
+Location: Akweteyman, Achimota Area, Accra, Ghana
+Organization: The Church of Pentecost - Akweteyman Worship Center (AKWC)
+
+/* SITE */
+Standards: HTML5, CSS3, ES2024, TypeScript, React 19, Tailwind CSS
+Software: MediaServe Ministry Management Portal
+Purpose: Church production scheduling, duty rosters, multi-stage reminders, and attendance verification.

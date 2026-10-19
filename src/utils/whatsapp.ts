@@ -1,5 +1,6 @@
 /**
- * WhatsApp Notification Generator for AKWC Media Ministry
+ * WhatsApp Notification & Dispatch Generator for AKWC Media Ministry
+ * COP Akweteyman Worship Center
  */
 
 export function formatPhoneForWhatsApp(rawPhone: string): string {
@@ -16,25 +17,24 @@ export function formatPhoneForWhatsApp(rawPhone: string): string {
   return digits;
 }
 
-export const SHARED_PRODUCTION_URL = 'https://ais-pre-z3xlqsfzebdajhhhc4glht-564557384915.europe-west3.run.app';
-
+/**
+ * Dynamically resolves the live application URL so that links shared to WhatsApp
+ * work seamlessly across any host (GitHub Pages, custom domain, Vercel, or local preview).
+ */
 export function getLiveAppBaseUrl(overrideUrl?: string): string {
-  let url = SHARED_PRODUCTION_URL;
-
-  if (overrideUrl && !overrideUrl.includes('github.io') && !overrideUrl.includes('localhost')) {
-    url = overrideUrl;
-  } else if (typeof window !== 'undefined') {
-    const origin = window.location.origin;
-    // Capture the path in case the app is hosted in a sub-directory
-    const path = window.location.pathname === '/' ? '' : window.location.pathname.replace(/\/$/, '');
-    
-    if (!origin.includes('ais-dev') && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
-      url = `${origin}${path}`;
-    }
+  if (overrideUrl && overrideUrl.trim()) {
+    return overrideUrl.trim().replace(/\/+$/, '');
   }
 
-  // Remove trailing slash to prevent double slashes in generated query URLs
-  return url.replace(/\/+$/, '');
+  if (typeof window !== 'undefined' && window.location) {
+    const origin = window.location.origin;
+    // Strip trailing slash and index.html if present
+    let path = window.location.pathname || '';
+    path = path.replace(/\/index\.html$/i, '').replace(/\/$/, '');
+    return `${origin}${path}`.replace(/\/+$/, '');
+  }
+
+  return 'https://akwc-mediaserve.web.app';
 }
 
 export interface WhatsAppAssignmentNotificationParams {
@@ -60,10 +60,19 @@ export function buildAssignmentWhatsAppMessage(params: WhatsAppAssignmentNotific
 } {
   const formattedPhone = formatPhoneForWhatsApp(params.memberPhone);
   const baseUrl = getLiveAppBaseUrl(params.appUrl);
-  const confirmUrl =
-    params.assignmentId && params.memberId
-      ? `${baseUrl}/?action=confirm&asgId=${params.assignmentId}&memberId=${params.memberId}`
-      : baseUrl;
+
+  // Embed full fallback parameters so that opening on a mobile device without local storage cache still works instantly
+  const queryParams = new URLSearchParams();
+  queryParams.set('action', 'confirm');
+  if (params.assignmentId) queryParams.set('asgId', params.assignmentId);
+  if (params.memberId) queryParams.set('memberId', params.memberId);
+  if (params.programTitle) queryParams.set('prog', params.programTitle);
+  if (params.roleName) queryParams.set('role', params.roleName);
+  if (params.programDate) queryParams.set('date', params.programDate);
+  if (params.callTime) queryParams.set('call', params.callTime);
+  if (params.station) queryParams.set('station', params.station);
+
+  const confirmUrl = `${baseUrl}/?${queryParams.toString()}`;
 
   const message = 
 `*COP AKWETEYMAN WORSHIP CENTER (AKWC)*
@@ -78,7 +87,7 @@ You have been scheduled on the AKWC Media Roster:
 ⏰ *Call Time:* ${params.callTime} *(Service: ${params.startTime} - ${params.endTime})*
 📍 *Station:* ${params.station}
 
-Tap the direct link below to *Confirm your attendance* on your member portal:
+Tap the direct link below to *Confirm your attendance* with 1 tap:
 👉 ${confirmUrl}
 
 _"Whatever you do, work at it with all your heart, as working for the Lord." — Colossians 3:23_
@@ -114,7 +123,17 @@ export function build24HourReminderWhatsAppMessage(params: WhatsApp24HourReminde
 } {
   const formattedPhone = formatPhoneForWhatsApp(params.memberPhone);
   const baseUrl = getLiveAppBaseUrl(params.appUrl);
-  const confirmUrl = `${baseUrl}/?action=confirm&asgId=${params.assignmentId}&memberId=${params.memberId}`;
+
+  const queryParams = new URLSearchParams();
+  queryParams.set('action', 'confirm');
+  queryParams.set('asgId', params.assignmentId);
+  queryParams.set('memberId', params.memberId);
+  if (params.programTitle) queryParams.set('prog', params.programTitle);
+  if (params.roleName) queryParams.set('role', params.roleName);
+  if (params.programDate) queryParams.set('date', params.programDate);
+  if (params.callTime) queryParams.set('call', params.callTime);
+
+  const confirmUrl = `${baseUrl}/?${queryParams.toString()}`;
 
   const message = 
 `*COP AKWETEYMAN WORSHIP CENTER (AKWC)*
@@ -145,7 +164,6 @@ export interface WhatsAppNewMemberAccountParams {
   memberName: string;
   memberPhone: string;
   email: string;
-  tempPassword?: string;
   appUrl?: string;
 }
 
@@ -159,17 +177,18 @@ export function buildNewMemberWhatsAppMessage(params: WhatsAppNewMemberAccountPa
 
   const message = 
 `*COP AKWETEYMAN WORSHIP CENTER (AKWC)*
-*MEDIA MINISTRY ACCOUNT CREATED* 🎉📱
+*MEDIA MINISTRY ACCOUNT ACTIVATION* 🎉📱
 
 Shalom *${params.memberName}*,
 Welcome to the AKWC Media Team! An account has been created for you on the MediaServe platform.
 
-🔑 *Your Login Credentials:*
+🔑 *Your Access Details:*
 🌐 *Portal URL:* ${baseUrl}
-📧 *Email:* ${params.email}
-🔒 *Temporary Password:* *${params.tempPassword || 'Password123!'}*
+📧 *Registered Email:* ${params.email}
 
-Please log in to view upcoming rosters, set your availability, and confirm duty assignments. Once logged in, you can update your password in settings.
+🔒 *First-Time Activation:* Simply enter your registered email address on the portal and create your personal password. No default passwords are used for maximum security.
+
+You will be able to view upcoming rosters, set your availability, and confirm duty assignments.
 
 _"Serve the Lord with gladness!" — Psalm 100:2_
 — *AKWC Media Production Leadership*`;

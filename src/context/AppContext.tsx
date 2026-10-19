@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   TeamMember,
   MediaRole,
@@ -70,6 +70,22 @@ interface AppContextType {
   loginWithPassword: (email: string, password: string) => Promise<{ success: boolean; message: string; requiresSetup?: boolean }>;
   changePassword: (newPassword: string) => Promise<{ success: boolean; message: string }>;
   resetPasswordForMember: (email: string) => Promise<void>;
+  requestPasswordReset: (
+    identifier: string,
+    method: 'email' | 'phone'
+  ) => Promise<{
+    success: boolean;
+    message: string;
+    code?: string;
+    maskedTarget?: string;
+    targetPhone?: string;
+    targetEmail?: string;
+  }>;
+  verifyAndResetPassword: (
+    identifier: string,
+    code: string,
+    newPassword: string
+  ) => Promise<{ success: boolean; message: string }>;
 
   // WhatsApp Automated Duty Dispatch
   whatsAppModalState: WhatsAppNotificationModalState | null;
@@ -129,6 +145,7 @@ interface AppContextType {
   updateReminderConfig: (config: ReminderConfig) => Promise<void>;
 
   // Tools & Reset
+  isSupabaseConfigured: boolean;
   resetToDefaults: () => Promise<void>;
   toastMessage: string | null;
   showToast: (msg: string) => void;
@@ -173,6 +190,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   async function loadData() {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
     try {
       const [
         { data: rolesData, error: rolesErr },
@@ -227,6 +248,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     loadData();
+
+    if (!isSupabaseConfigured) return;
 
     const channel = supabase
       .channel('schema-db-changes')
@@ -385,34 +408,88 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     member: TeamMember;
   } | null>(null);
 
-  const closeDirectConfirmModal = () => setDirectConfirmData(null);
+  const closeDirectConfirmModal = () => {
+    setDirectConfirmData(null);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     try {
       const urlParams = new URLSearchParams(window.location.search);
+      const action = urlParams.get('action');
       const asgId = urlParams.get('asgId');
       const memberId = urlParams.get('memberId');
+      const progTitle = urlParams.get('prog') || 'Church Media Service';
+      const roleName = urlParams.get('role') || 'Media Production';
+      const progDate = urlParams.get('date') || new Date().toISOString().split('T')[0];
+      const callTime = urlParams.get('call') || '07:30 AM';
+      const station = urlParams.get('station') || 'Media Production Station';
 
-      if (asgId) {
+      if (asgId || action === 'confirm') {
         const foundAsg = assignments.find((a) => a.id === asgId);
         const targetMemId = memberId || foundAsg?.memberId;
         const foundMem = members.find((m) => m.id === targetMemId);
         const foundProg = programs.find((p) => p.id === foundAsg?.programId);
         const foundRole = roles.find((r) => r.id === foundAsg?.roleId);
 
-        if (foundMem && foundAsg && foundProg && foundRole) {
-          setDirectConfirmData({
-            asg: foundAsg,
-            prog: foundProg,
-            role: foundRole,
-            member: foundMem,
-          });
+        const resolvedMem: TeamMember = foundMem || {
+          id: targetMemId || 'mem-temp',
+          name: 'AKWC Media Minister',
+          email: 'media@akwc.org',
+          phone: '',
+          gender: 'Male',
+          primaryRole: 'role-livestream-projection',
+          secondaryRoles: [],
+          skillLevel: 'Intermediate',
+          rawSkillDescription: 'Intermediate',
+          availability: 'Flexible',
+          status: 'active',
+          joinedDate: new Date().toISOString().split('T')[0],
+        };
 
-          showToast(`Welcome ${foundMem.name}! Please confirm your attendance below.`);
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
+        const resolvedProg: ProgramService = foundProg || {
+          id: foundAsg?.programId || 'prog-direct',
+          title: progTitle,
+          serviceType: 'Sunday Divine Service',
+          date: progDate,
+          callTime: callTime,
+          startTime: '08:00 AM',
+          endTime: '11:30 AM',
+          location: station,
+          directorName: 'Bernard Owusu Obuobi',
+        };
+
+        const resolvedRole: MediaRole = foundRole || {
+          id: foundAsg?.roleId || 'role-direct',
+          name: roleName,
+          category: 'video',
+          station: station,
+          description: roleName,
+          defaultCount: 1,
+          skillRequired: 'Intermediate',
+        };
+
+        const resolvedAsg: RoleAssignment = foundAsg || {
+          id: asgId || 'asg-direct',
+          programId: resolvedProg.id,
+          roleId: resolvedRole.id,
+          memberId: resolvedMem.id,
+          status: 'pending',
+          remindersSent: [],
+        };
+
+        setDirectConfirmData({
+          asg: resolvedAsg,
+          prog: resolvedProg,
+          role: resolvedRole,
+          member: resolvedMem,
+        });
+
+        showToast(`Duty assignment loaded for ${resolvedMem.name}! Please confirm your attendance.`);
       }
     } catch {
       // Ignore URL parsing errors
@@ -660,7 +737,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetAcc = accounts.find((a) => a.memberId === memberId);
     if (targetAcc) {
       const currentAllowed = targetAcc.allowedPortals || ['team'];
-      const newAllowed = newIsLeader ? Array.from(new Set([...currentAllowed, 'leadership', 'team'])) : currentAllowed.filter((p) => p !== 'leadership');
+      const newAllowed: PortalType[] = newIsLeader
+        ? (Array.from(new Set([...currentAllowed, 'leadership', 'team'])) as PortalType[])
+        : (currentAllowed.filter((p) => p !== 'leadership') as PortalType[]);
 
       await supabase.from('accounts').update({ allowedPortals: newAllowed, defaultPortal: newIsLeader ? 'leadership' : 'team' }).eq('id', targetAcc.id);
       setAccounts((prev) => prev.map((a) => (a.id === targetAcc.id ? { ...a, allowedPortals: newAllowed, defaultPortal: newIsLeader ? 'leadership' : 'team' } : a)));
@@ -744,6 +823,162 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`Password reset for ${cleanEmail}.`);
   };
 
+  const requestPasswordReset = async (
+    identifier: string,
+    method: 'email' | 'phone'
+  ): Promise<{
+    success: boolean;
+    message: string;
+    code?: string;
+    maskedTarget?: string;
+    targetPhone?: string;
+    targetEmail?: string;
+  }> => {
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanPhoneDigits = identifier.replace(/\D/g, '');
+
+    // Match by email or phone
+    const member = members.find((m) => {
+      const memEmail = m.email.trim().toLowerCase();
+      const memPhoneDigits = m.phone.replace(/\D/g, '');
+      return memEmail === cleanId || (cleanPhoneDigits.length >= 7 && (memPhoneDigits.endsWith(cleanPhoneDigits) || cleanPhoneDigits.endsWith(memPhoneDigits)));
+    });
+
+    const account = accounts.find((a) => {
+      return a.email.trim().toLowerCase() === cleanId || (member && a.memberId === member.id);
+    });
+
+    if (!member && !account) {
+      return {
+        success: false,
+        message: 'No registered member or account found matching this email or phone number.',
+      };
+    }
+
+    const email = account?.email || member?.email || '';
+    const phone = member?.phone || '';
+
+    // Generate a secure 6-digit OTP code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
+
+    const resetPayload = {
+      code,
+      expiresAt,
+      email,
+      phone,
+      memberId: member?.id,
+      accountId: account?.id,
+    };
+
+    sessionStorage.setItem('mediaserve_pwd_reset', JSON.stringify(resetPayload));
+
+    let maskedTarget = '';
+    if (method === 'email' && email) {
+      const parts = email.split('@');
+      const namePart = parts[0];
+      const domain = parts[1] || '';
+      const maskedName = namePart.length > 2 ? `${namePart[0]}***${namePart[namePart.length - 1]}` : `${namePart[0]}***`;
+      maskedTarget = `${maskedName}@${domain}`;
+    } else {
+      const cleanDigits = phone.replace(/\D/g, '');
+      maskedTarget = cleanDigits.length >= 6 ? `${cleanDigits.slice(0, 3)}••••${cleanDigits.slice(-3)}` : phone;
+    }
+
+    await logAction(
+      member?.name || email,
+      'Password Reset Requested',
+      `Verification code requested via ${method.toUpperCase()} for ${maskedTarget}.`,
+      'system'
+    );
+
+    return {
+      success: true,
+      message: `Verification code generated for ${maskedTarget}.`,
+      code,
+      maskedTarget,
+      targetPhone: phone,
+      targetEmail: email,
+    };
+  };
+
+  const verifyAndResetPassword = async (
+    identifier: string,
+    code: string,
+    newPassword: string
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, message: 'Password must be at least 6 characters long.' };
+    }
+
+    const storedStr = sessionStorage.getItem('mediaserve_pwd_reset');
+    let resetData: { code: string; expiresAt: number; email: string; phone: string; memberId?: string; accountId?: string } | null = null;
+    if (storedStr) {
+      try {
+        resetData = JSON.parse(storedStr);
+      } catch {}
+    }
+
+    const cleanInputCode = code.trim();
+    if (!resetData || resetData.code !== cleanInputCode) {
+      return { success: false, message: 'Invalid verification code. Please check and try again.' };
+    }
+
+    if (Date.now() > resetData.expiresAt) {
+      return { success: false, message: 'Verification code has expired. Please request a new code.' };
+    }
+
+    const cleanEmail = resetData.email.trim().toLowerCase();
+    let acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+    const mem = members.find((m) => m.id === resetData?.memberId || m.email.toLowerCase() === cleanEmail);
+
+    if (!acc && mem) {
+      const newAccountId = generateUniqueId('acc');
+      acc = {
+        id: newAccountId,
+        email: cleanEmail,
+        memberId: mem.id,
+        allowedPortals: ['team'],
+        defaultPortal: 'team',
+        password: newPassword,
+        hasSetPassword: true,
+        passwordSetAt: new Date().toISOString(),
+      };
+      await supabase.from('accounts').insert([acc]);
+      setAccounts((prev) => [...prev, acc!]);
+    } else if (acc) {
+      const { error } = await supabase
+        .from('accounts')
+        .update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() })
+        .eq('id', acc.id);
+      if (error) return { success: false, message: error.message };
+      setAccounts((prev) =>
+        prev.map((a) => (a.id === acc!.id ? { ...a, password: newPassword, hasSetPassword: true } : a))
+      );
+    } else {
+      return { success: false, message: 'Account not found to update password.' };
+    }
+
+    // Clean up reset session
+    sessionStorage.removeItem('mediaserve_pwd_reset');
+
+    // Automatically log in
+    setCurrentAccountId(acc.id);
+    setIsLoggedIn(true);
+    sessionStorage.setItem('mediaserve_auth', 'true');
+    sessionStorage.setItem('mediaserve_account_id', acc.id);
+
+    await logAction(
+      mem?.name || cleanEmail,
+      'Password Reset Complete',
+      `Account password was verified and reset successfully for ${cleanEmail}.`,
+      'system'
+    );
+
+    showToast(`Password updated successfully! Welcome back, ${mem?.name || cleanEmail}.`);
+    return { success: true, message: 'Password reset and sign in successful!' };
+  };
+
   const logAction = async (actor: string, action: string, details: string, type: AuditLog['type']) => {
     const newLog: AuditLog = {
       id: generateUniqueId('log'),
@@ -758,9 +993,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const confirmAttendance = async (assignmentId: string, arrivalComment?: string, estimatedArrivalTime?: string) => {
-    await supabase.from('assignments').update({ status: 'confirmed', confirmedAt: new Date().toISOString(), arrivalComment: arrivalComment?.trim() || null, estimatedArrivalTime: estimatedArrivalTime?.trim() || null, declineReason: null }).eq('id', assignmentId);
-    setAssignments((prev) => prev.map((a) => (a.id === assignmentId ? { ...a, status: 'confirmed', confirmedAt: new Date().toISOString(), arrivalComment: arrivalComment?.trim() || undefined, estimatedArrivalTime: estimatedArrivalTime?.trim() || undefined } : a)));
-    showToast('Attendance confirmed!');
+    const existing = assignments.find((a) => a.id === assignmentId);
+    if (!existing && directConfirmData?.asg) {
+      const newAsg: RoleAssignment = {
+        ...directConfirmData.asg,
+        id: assignmentId,
+        status: 'confirmed',
+        confirmedAt: new Date().toISOString(),
+        arrivalComment: arrivalComment?.trim() || undefined,
+        estimatedArrivalTime: estimatedArrivalTime?.trim() || undefined,
+        declineReason: undefined,
+      };
+      await supabase.from('assignments').upsert([newAsg]);
+      setAssignments((prev) => [...prev, newAsg]);
+    } else {
+      await supabase.from('assignments').update({ status: 'confirmed', confirmedAt: new Date().toISOString(), arrivalComment: arrivalComment?.trim() || null, estimatedArrivalTime: estimatedArrivalTime?.trim() || null, declineReason: null }).eq('id', assignmentId);
+      setAssignments((prev) => prev.map((a) => (a.id === assignmentId ? { ...a, status: 'confirmed', confirmedAt: new Date().toISOString(), arrivalComment: arrivalComment?.trim() || undefined, estimatedArrivalTime: estimatedArrivalTime?.trim() || undefined } : a)));
+    }
+    showToast('Attendance confirmed! Thank you for your service.');
   };
 
   const declineAttendance = async (assignmentId: string, reason: string) => {
@@ -975,6 +1225,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loginWithPassword,
         changePassword,
         resetPasswordForMember,
+        requestPasswordReset,
+        verifyAndResetPassword,
         whatsAppModalState,
         closeWhatsAppModal,
         openWhatsAppModalForAssignment,
@@ -1016,6 +1268,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteAnnouncement,
         updateVerse,
         updateReminderConfig,
+        isSupabaseConfigured,
         resetToDefaults,
         toastMessage,
         showToast,

@@ -5,24 +5,63 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>MediaServe - AKWC Media Team Management</title>
     <meta name="description" content="Production media scheduling, role assignment, multi-stage reminders, and attendance confirmation system for COP Akweteyman Worship Center." />
+    <link rel="canonical" href="https://akwc-mediaserve.web.app/" />
+    
+    <!-- Open Graph / WhatsApp Preview Meta -->
     <meta property="og:title" content="MediaServe - AKWC Media Team Management" />
     <meta property="og:description" content="Production media scheduling, role assignment, multi-stage reminders, and attendance confirmation system for COP Akweteyman Worship Center." />
     <meta property="og:type" content="website" />
+    <meta property="og:image" content="./pwa-512x512.png" />
+    <meta property="og:site_name" content="MediaServe AKWC" />
+    
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="MediaServe - AKWC Media Team Management" />
+    <meta name="twitter:description" content="Production media scheduling, role assignment, multi-stage reminders, and attendance confirmation system for COP Akweteyman Worship Center." />
+    <meta name="twitter:image" content="./pwa-512x512.png" />
+
+    <!-- PWA & Device Support -->
     <meta name="theme-color" content="#020617" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="MediaServe" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    
+    <!-- Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Schema.org Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Church",
+      "name": "The Church of Pentecost - Akweteyman Worship Center",
+      "alternateName": "COP AKWC Media Ministry",
+      "description": "Production media scheduling, duty rosters, multi-stage reminders, and attendance confirmation system for COP Akweteyman Worship Center.",
+      "url": "https://akwc-mediaserve.web.app/",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "Akweteyman",
+        "addressRegion": "Greater Accra",
+        "addressCountry": "GH"
+      },
+      "department": {
+        "@type": "Organization",
+        "name": "AKWC Media Ministry",
+        "founder": {
+          "@type": "Person",
+          "name": "Bernard Owusu Obuobi"
+        }
+      }
+    }
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased selection:bg-amber-500/20 selection:text-amber-200">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

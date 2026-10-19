@@ -316,6 +316,8 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
                 </label>
                 <input
                   type="email"
+                  name="username"
+                  autoComplete="username"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   placeholder="you@example.com"
@@ -332,6 +334,8 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({ isOp
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <input
                     type={showLoginPassword ? 'text' : 'password'}
+                    name="password"
+                    autoComplete="current-password"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="Your password"
