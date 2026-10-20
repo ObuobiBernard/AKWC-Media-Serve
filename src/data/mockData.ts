@@ -108,6 +108,7 @@ export const INITIAL_MEMBERS: TeamMember[] = [
     availability: 'Flexible',
     status: 'active',
     joinedDate: '2026-01-19',
+    isLeader: true,
     notes: 'Advanced in Livestreaming & Projection, Social Media Management, and Administration / Coordination.',
   },
   {
@@ -123,6 +124,7 @@ export const INITIAL_MEMBERS: TeamMember[] = [
     availability: 'Both Sundays & Weekdays',
     status: 'active',
     joinedDate: '2026-01-19',
+    isLeader: true,
     notes: 'Graphics & Design Lead Deacon. Intermediate videography capability.',
   },
   {
@@ -138,6 +140,7 @@ export const INITIAL_MEMBERS: TeamMember[] = [
     availability: 'Flexible',
     status: 'active',
     joinedDate: '2026-01-19',
+    isLeader: true,
     notes: 'AKWC Media Director. Expert in Livestreaming & Projection, Expert in Photography, Advanced in Technical IT Systems.',
   },
   {
@@ -168,6 +171,7 @@ export const INITIAL_MEMBERS: TeamMember[] = [
     availability: 'Flexible',
     status: 'active',
     joinedDate: '2026-01-19',
+    isLeader: true,
     notes: 'Expert Photographer. Can train others and lead photo sessions. Advanced in Social Media Management.',
   },
   {
@@ -213,6 +217,7 @@ export const INITIAL_MEMBERS: TeamMember[] = [
     availability: 'Flexible',
     status: 'active',
     joinedDate: '2026-01-25',
+    isLeader: true,
     notes: 'Expert trainer in Livestreaming & Projection. Intermediate in Photography and Videography.',
   },
   {
@@ -303,6 +308,7 @@ export const INITIAL_MEMBERS: TeamMember[] = [
     availability: 'Both Sundays & Weekdays',
     status: 'active',
     joinedDate: '2026-01-30',
+    isLeader: true,
     notes: 'Expert Videographer, Graphics Specialist, and IT Support lead. Available Sundays and weekdays.',
   },
   {

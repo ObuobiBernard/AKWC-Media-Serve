@@ -19,6 +19,7 @@ import {
 
 export const LeadershipPortal: React.FC = () => {
   const {
+    isLeader,
     isSuperAdmin,
     isPatron,
     members,
@@ -35,6 +36,21 @@ export const LeadershipPortal: React.FC = () => {
     assignMemberToRole,
     openWhatsAppModalForAssignment,
   } = useApp();
+
+  // Security Guard: Prevent unauthorized rendering of Leadership Portal
+  if (!isLeader) {
+    return (
+      <div className="p-8 bg-slate-900 border border-amber-500/30 rounded-2xl text-center space-y-4 max-w-lg mx-auto my-12 animate-in fade-in duration-200">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto shadow-lg shadow-amber-950">
+          <Lock className="w-7 h-7" />
+        </div>
+        <h2 className="text-lg font-bold text-white">Leadership Clearance Required</h2>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Access to the Media Leadership Console is reserved for appointed media ministry leaders and coordinators.
+        </p>
+      </div>
+    );
+  }
 
   // Announcement State
   const [announcementTitle, setAnnouncementTitle] = useState('');

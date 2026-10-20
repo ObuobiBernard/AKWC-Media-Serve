@@ -14,6 +14,7 @@ import {
   getSupabaseConfig,
   saveSupabaseConfig,
   clearSupabaseConfig,
+  testSupabaseConnection,
 } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
 
@@ -190,8 +191,35 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
   const [url, setUrl] = useState(currentConfig.url || '');
   const [anonKey, setAnonKey] = useState(currentConfig.anonKey || '');
   const [copied, setCopied] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+    tablesFound?: boolean;
+  } | null>(null);
 
   if (!isOpen) return null;
+
+  const handleTest = async () => {
+    if (!url.trim() || !anonKey.trim()) {
+      showToast('Please enter both Supabase URL and Anon Key to test.');
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await testSupabaseConnection(url.trim(), anonKey.trim());
+      setTestResult(res);
+      showToast(res.message);
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        message: err?.message || 'Connection test failed',
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -303,6 +331,51 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
               <span className="text-[10px] text-slate-500 mt-0.5 block">
                 Public anon key (safe for client-side applications)
               </span>
+            </div>
+
+            {/* Test Connection Button & Result */}
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleTest}
+                disabled={testing}
+                className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin text-emerald-400' : ''}`} />
+                <span>{testing ? 'Testing connection...' : 'Test Connection'}</span>
+              </button>
+
+              {testResult && (
+                <div
+                  className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                    testResult.success
+                      ? testResult.tablesFound
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                        : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  }`}
+                >
+                  {testResult.success ? (
+                    testResult.tablesFound ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    )
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-1">
+                    <p className="font-semibold">
+                      {testResult.success
+                        ? testResult.tablesFound
+                          ? 'Supabase Connection Live!'
+                          : 'Connected, but tables missing'
+                        : 'Connection Test Failed'}
+                    </p>
+                    <p className="text-[11px] opacity-90 leading-relaxed">{testResult.message}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-slate-300 leading-relaxed space-y-1">

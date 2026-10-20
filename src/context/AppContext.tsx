@@ -24,9 +24,18 @@ import {
   INITIAL_VERSE,
   INITIAL_REMINDER_CONFIG,
 } from '../data/mockData';
+import { buildAssignmentWhatsAppMessage } from '../utils/whatsapp';
 import {
-  buildAssignmentWhatsAppMessage,
-} from '../utils/whatsapp';
+  hashPassword,
+  verifyPassword,
+  isPasswordHashed,
+  sanitizeText,
+  sanitizeEmail,
+  sanitizePhone,
+  checkRateLimit,
+  recordFailedAttempt,
+  resetRateLimit,
+} from '../utils/security';
 
 export const SUPER_ADMIN_EMAIL = 'bernardoobuobi@gmail.com';
 
@@ -158,25 +167,67 @@ export const generateUniqueId = (prefix: string): string => {
   return `${prefix}-${Date.now()}-${idSequence}-${rand}`;
 };
 
+const getStoredItem = <T,>(key: string, defaultValue: T): T => {
+  if (typeof window === 'undefined') return defaultValue;
+  try {
+    const item = window.localStorage.getItem(key);
+    if (!item) return defaultValue;
+    const parsed = JSON.parse(item);
+    if (Array.isArray(defaultValue) && Array.isArray(parsed) && parsed.length > 0) {
+      return parsed as unknown as T;
+    }
+    if (!Array.isArray(defaultValue) && parsed) {
+      return parsed as unknown as T;
+    }
+  } catch (err) {
+    console.warn(`Could not parse stored item for ${key}:`, err);
+  }
+  return defaultValue;
+};
+
+const setStoredItem = <T,>(key: string, data: T) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(data));
+  } catch (err) {
+    console.warn(`Could not save item for ${key}:`, err);
+  }
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [roles, setRoles] = useState<MediaRole[]>([]);
-  const [members, setMembers] = useState<TeamMember[]>([]);
-  const [accounts, setAccounts] = useState<UserAccount[]>([]);
-  const [programs, setPrograms] = useState<ProgramService[]>([]);
-  const [assignments, setAssignments] = useState<RoleAssignment[]>([]);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [verse, setVerse] = useState<VerseOfTheDay>(INITIAL_VERSE);
-  const [reminderConfig, setReminderConfig] = useState<ReminderConfig>(INITIAL_REMINDER_CONFIG);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [roles, setRoles] = useState<MediaRole[]>(() => getStoredItem('akwc_roles', INITIAL_ROLES));
+  const [members, setMembers] = useState<TeamMember[]>(() => getStoredItem('akwc_members', INITIAL_MEMBERS));
+  const [accounts, setAccounts] = useState<UserAccount[]>(() => getStoredItem('akwc_accounts', INITIAL_ACCOUNTS));
+  const [programs, setPrograms] = useState<ProgramService[]>(() => getStoredItem('akwc_programs', INITIAL_PROGRAMS));
+  const [assignments, setAssignments] = useState<RoleAssignment[]>(() => getStoredItem('akwc_assignments', INITIAL_ASSIGNMENTS));
+  const [announcements, setAnnouncements] = useState<Announcement[]>(() => getStoredItem('akwc_announcements', INITIAL_ANNOUNCEMENTS));
+  const [verse, setVerse] = useState<VerseOfTheDay>(() => getStoredItem('akwc_verse', INITIAL_VERSE));
+  const [reminderConfig, setReminderConfig] = useState<ReminderConfig>(() => getStoredItem('akwc_reminder_config', INITIAL_REMINDER_CONFIG));
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => getStoredItem('akwc_audit_logs', []));
+
+  // Sync state changes to localStorage cache
+  useEffect(() => { setStoredItem('akwc_roles', roles); }, [roles]);
+  useEffect(() => { setStoredItem('akwc_members', members); }, [members]);
+  useEffect(() => { setStoredItem('akwc_accounts', accounts); }, [accounts]);
+  useEffect(() => { setStoredItem('akwc_programs', programs); }, [programs]);
+  useEffect(() => { setStoredItem('akwc_assignments', assignments); }, [assignments]);
+  useEffect(() => { setStoredItem('akwc_announcements', announcements); }, [announcements]);
+  useEffect(() => { setStoredItem('akwc_verse', verse); }, [verse]);
+  useEffect(() => { setStoredItem('akwc_reminder_config', reminderConfig); }, [reminderConfig]);
+  useEffect(() => { setStoredItem('akwc_audit_logs', auditLogs); }, [auditLogs]);
 
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     return sessionStorage.getItem('mediaserve_auth') === 'true';
   });
 
   const [currentAccountId, setCurrentAccountId] = useState<string>(() => {
-    return sessionStorage.getItem('mediaserve_account_id') || '';
+    const saved = sessionStorage.getItem('mediaserve_account_id');
+    if (saved) return saved;
+    // Default to Super Admin (Bernard) if available
+    const superAdmin = INITIAL_ACCOUNTS.find((a) => a.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase());
+    return superAdmin ? superAdmin.id : '';
   });
 
   const [activePortal, setActivePortal] = useState<PortalType>('team');
@@ -196,16 +247,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       const [
-        { data: rolesData, error: rolesErr },
-        { data: membersData, error: memErr },
-        { data: accountsData, error: accErr },
-        { data: programsData, error: progErr },
-        { data: assignmentsData, error: asgErr },
-        { data: announcementsData, error: annErr },
-        { data: verseData },
-        { data: reminderData },
-        { data: logsData },
-      ] = await Promise.all([
+        rolesRes,
+        membersRes,
+        accountsRes,
+        programsRes,
+        assignmentsRes,
+        announcementsRes,
+        verseRes,
+        reminderRes,
+        logsRes,
+      ] = await Promise.allSettled([
         supabase.from('roles').select('*'),
         supabase.from('members').select('*'),
         supabase.from('accounts').select('*'),
@@ -217,32 +268,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(50),
       ]);
 
-      if (!rolesErr && rolesData && rolesData.length > 0) setRoles(rolesData);
-      else { setRoles(INITIAL_ROLES); await supabase.from('roles').upsert(INITIAL_ROLES); }
-
-      if (!memErr && membersData && membersData.length > 0) setMembers(membersData);
-      else { setMembers(INITIAL_MEMBERS); await supabase.from('members').upsert(INITIAL_MEMBERS); }
-
-      if (!accErr && accountsData && accountsData.length > 0) setAccounts(accountsData);
-      else { setAccounts(INITIAL_ACCOUNTS); await supabase.from('accounts').upsert(INITIAL_ACCOUNTS); }
-
-      if (progErr) {
-        console.error('Could not load programs from Supabase:', progErr.message);
-      } else {
-        setPrograms(programsData ?? []);
+      if (rolesRes.status === 'fulfilled' && !rolesRes.value.error && rolesRes.value.data && rolesRes.value.data.length > 0) {
+        setRoles(rolesRes.value.data);
       }
-
-      if (!asgErr && assignmentsData && assignmentsData.length > 0) setAssignments(assignmentsData);
-      else { setAssignments(INITIAL_ASSIGNMENTS); await supabase.from('assignments').upsert(INITIAL_ASSIGNMENTS); }
-
-      if (!annErr && announcementsData && announcementsData.length > 0) setAnnouncements(announcementsData);
-      else { setAnnouncements(INITIAL_ANNOUNCEMENTS); await supabase.from('announcements').upsert(INITIAL_ANNOUNCEMENTS); }
-
-      if (verseData) setVerse(verseData);
-      if (reminderData) setReminderConfig(reminderData);
-      if (logsData) setAuditLogs(logsData);
-    } catch (err) {
-      console.error('Error fetching data from Supabase:', err);
+      if (membersRes.status === 'fulfilled' && !membersRes.value.error && membersRes.value.data && membersRes.value.data.length > 0) {
+        setMembers(membersRes.value.data);
+      }
+      if (accountsRes.status === 'fulfilled' && !accountsRes.value.error && accountsRes.value.data && accountsRes.value.data.length > 0) {
+        setAccounts(accountsRes.value.data);
+      }
+      if (programsRes.status === 'fulfilled' && !programsRes.value.error && programsRes.value.data) {
+        setPrograms(programsRes.value.data);
+      }
+      if (assignmentsRes.status === 'fulfilled' && !assignmentsRes.value.error && assignmentsRes.value.data && assignmentsRes.value.data.length > 0) {
+        setAssignments(assignmentsRes.value.data);
+      }
+      if (announcementsRes.status === 'fulfilled' && !announcementsRes.value.error && announcementsRes.value.data && announcementsRes.value.data.length > 0) {
+        setAnnouncements(announcementsRes.value.data);
+      }
+      if (verseRes.status === 'fulfilled' && !verseRes.value.error && verseRes.value.data) {
+        setVerse(verseRes.value.data);
+      }
+      if (reminderRes.status === 'fulfilled' && !reminderRes.value.error && reminderRes.value.data) {
+        setReminderConfig(reminderRes.value.data);
+      }
+      if (logsRes.status === 'fulfilled' && !logsRes.value.error && logsRes.value.data) {
+        setAuditLogs(logsRes.value.data);
+      }
+    } catch (err: any) {
+      console.warn('Could not load data from Supabase (operating from local cache):', err?.message || err);
     }
   }
 
@@ -251,45 +305,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (!isSupabaseConfigured) return;
 
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-        loadData();
-      })
-      .subscribe();
+    try {
+      const channel = supabase
+        .channel('schema-db-changes')
+        .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+          loadData();
+        })
+        .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      return () => {
+        try {
+          supabase.removeChannel(channel);
+        } catch {}
+      };
+    } catch (err) {
+      console.warn('Realtime channel setup error:', err);
+    }
   }, []);
 
   const currentAccount =
     accounts.find((a) => a.id === currentAccountId) ||
     accounts[0] || {
-      id: '',
-      email: '',
-      memberId: '',
-      allowedPortals: ['team'],
-      defaultPortal: 'team',
+      id: 'acc-super-1',
+      email: SUPER_ADMIN_EMAIL,
+      memberId: 'mem-1',
+      allowedPortals: ['admin', 'leadership', 'team'],
+      defaultPortal: 'admin',
     };
 
   const currentMember =
     members.find((m) => m.id === currentAccount?.memberId) ||
     members[0] || {
-      id: '',
-      name: 'Guest Member',
-      email: '',
-      phone: '',
-      primaryRole: '',
-      secondaryRoles: [],
-      skillLevel: 'Beginner',
+      id: 'mem-1',
+      name: 'Bernard Obuobi',
+      email: SUPER_ADMIN_EMAIL,
+      phone: '0543515464',
+      primaryRole: 'r-live-switcher',
+      secondaryRoles: ['r-audio-foh'],
+      skillLevel: 'Lead',
       availability: 'Flexible',
       status: 'active',
-      joinedDate: new Date().toISOString().split('T')[0],
+      joinedDate: '2023-01-15',
     };
 
   const isSuperAdmin = currentAccount?.email?.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase();
-  
+
   const isPatron =
     currentAccount?.allowedPortals?.includes('patron') ||
     currentAccount?.defaultPortal === 'patron';
@@ -380,26 +440,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [isLoggedIn, inactivityTimeoutMinutes]);
 
-  const parseServiceDateTime = (dateStr: string, timeStr?: string): Date => {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    let hours = 8;
-    let minutes = 0;
-
-    if (timeStr) {
-      const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
-      if (match) {
-        let h = parseInt(match[1], 10);
-        const m = parseInt(match[2], 10);
-        const ampm = match[3]?.toUpperCase();
-        if (ampm === 'PM' && h < 12) h += 12;
-        if (ampm === 'AM' && h === 12) h = 0;
-        hours = h;
-        minutes = m;
-      }
-    }
-
-    return new Date(year, month - 1, day, hours, minutes);
-  };
+  const [pending24HourDuties, setPending24HourDuties] = useState<Pending24HourDuty[]>([]);
+  const [automatedReminderModalOpen, setAutomatedReminderModalOpen] = useState<boolean>(false);
 
   const [directConfirmData, setDirectConfirmData] = useState<{
     asg: RoleAssignment;
@@ -420,113 +462,112 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const action = urlParams.get('action');
       const asgId = urlParams.get('asgId');
-      const memberId = urlParams.get('memberId');
-      const progTitle = urlParams.get('prog') || 'Church Media Service';
-      const roleName = urlParams.get('role') || 'Media Production';
-      const progDate = urlParams.get('date') || new Date().toISOString().split('T')[0];
-      const callTime = urlParams.get('call') || '07:30 AM';
-      const station = urlParams.get('station') || 'Media Production Station';
+      const action = urlParams.get('action');
 
-      if (asgId || action === 'confirm') {
-        const foundAsg = assignments.find((a) => a.id === asgId);
-        const targetMemId = memberId || foundAsg?.memberId;
-        const foundMem = members.find((m) => m.id === targetMemId);
-        const foundProg = programs.find((p) => p.id === foundAsg?.programId);
-        const foundRole = roles.find((r) => r.id === foundAsg?.roleId);
+      if (action === 'confirm' && (asgId || urlParams.get('prog') || urlParams.get('role'))) {
+        let foundAsg = assignments.find((a) => a.id === asgId);
+        const targetMemId = urlParams.get('mem') || foundAsg?.memberId;
+        const targetProgId = urlParams.get('prog') || foundAsg?.programId;
+        const targetRoleId = urlParams.get('role') || foundAsg?.roleId;
 
-        const resolvedMem: TeamMember = foundMem || {
-          id: targetMemId || 'mem-temp',
-          name: 'AKWC Media Minister',
-          email: 'media@akwc.org',
+        const foundMem = members.find((m) => m.id === targetMemId) || {
+          id: targetMemId || 'mem-whatsapp',
+          name: urlParams.get('name') || 'Team Member',
+          email: '',
           phone: '',
-          gender: 'Male',
-          primaryRole: 'role-livestream-projection',
+          primaryRole: targetRoleId || 'r-general',
           secondaryRoles: [],
-          skillLevel: 'Intermediate',
-          rawSkillDescription: 'Intermediate',
+          skillLevel: 'Intermediate' as const,
           availability: 'Flexible',
-          status: 'active',
-          joinedDate: new Date().toISOString().split('T')[0],
+          status: 'active' as const,
+          joinedDate: '2024-01-01',
         };
 
-        const resolvedProg: ProgramService = foundProg || {
-          id: foundAsg?.programId || 'prog-direct',
-          title: progTitle,
-          serviceType: 'Sunday Divine Service',
-          date: progDate,
-          callTime: callTime,
-          startTime: '08:00 AM',
-          endTime: '11:30 AM',
-          location: station,
-          directorName: 'Bernard Owusu Obuobi',
+        const foundProg = programs.find((p) => p.id === targetProgId) || {
+          id: targetProgId || 'prog-whatsapp',
+          title: urlParams.get('title') || 'Upcoming Service',
+          serviceType: 'Sunday Divine Service' as const,
+          date: urlParams.get('date') || new Date().toISOString().split('T')[0],
+          startTime: '08:00',
+          endTime: '12:00',
+          callTime: '07:30',
+          location: 'Main Auditorium',
+          directorName: 'Media Director',
         };
 
-        const resolvedRole: MediaRole = foundRole || {
-          id: foundAsg?.roleId || 'role-direct',
-          name: roleName,
-          category: 'video',
-          station: station,
-          description: roleName,
+        const foundRole = roles.find((r) => r.id === targetRoleId) || {
+          id: targetRoleId || 'role-whatsapp',
+          name: urlParams.get('roleName') || 'Media Station',
+          category: 'video' as const,
+          description: 'Media ministry role',
+          station: 'Media Booth',
+          skillRequired: 'Intermediate' as const,
           defaultCount: 1,
-          skillRequired: 'Intermediate',
         };
 
-        const resolvedAsg: RoleAssignment = foundAsg || {
-          id: asgId || 'asg-direct',
-          programId: resolvedProg.id,
-          roleId: resolvedRole.id,
-          memberId: resolvedMem.id,
-          status: 'pending',
-          remindersSent: [],
-        };
+        if (!foundAsg) {
+          foundAsg = {
+            id: asgId || `asg-url-${Date.now()}`,
+            programId: foundProg.id,
+            roleId: foundRole.id,
+            memberId: foundMem.id,
+            status: 'pending',
+            remindersSent: [],
+          };
+        }
 
         setDirectConfirmData({
-          asg: resolvedAsg,
-          prog: resolvedProg,
-          role: resolvedRole,
-          member: resolvedMem,
+          asg: foundAsg,
+          prog: foundProg,
+          role: foundRole,
+          member: foundMem,
         });
-
-        showToast(`Duty assignment loaded for ${resolvedMem.name}! Please confirm your attendance.`);
       }
-    } catch {
-      // Ignore URL parsing errors
+    } catch (e) {
+      console.warn('Error reading confirm link:', e);
     }
-  }, [assignments, members, programs, roles]);
-
-  const [automatedReminderModalOpen, setAutomatedReminderModalOpen] = useState(false);
-  const [pending24HourDuties, setPending24HourDuties] = useState<Pending24HourDuty[]>([]);
+  }, [assignments, programs, roles, members]);
 
   const calculatePending24HourDuties = (): Pending24HourDuty[] => {
-    const now = Date.now();
-    const result: Pending24HourDuty[] = [];
+    const now = new Date();
+    const duties: Pending24HourDuty[] = [];
 
     programs.forEach((prog) => {
-      const serviceDt = parseServiceDateTime(prog.date, prog.callTime || prog.startTime);
-      const diffMs = serviceDt.getTime() - now;
-      const hoursRemaining = Math.round(diffMs / (1000 * 60 * 60));
+      try {
+        const [year, month, day] = prog.date.split('-').map(Number);
+        const [startHours, startMins] = prog.startTime.split(':').map(Number);
+        const serviceStart = new Date(year, month - 1, day, startHours, startMins);
 
-      if (hoursRemaining >= -4 && hoursRemaining <= 24) {
-        const progAsgs = assignments.filter((a) => a.programId === prog.id && a.memberId && a.status === 'pending');
-        progAsgs.forEach((asg) => {
-          const mem = members.find((m) => m.id === asg.memberId);
-          const role = roles.find((r) => r.id === asg.roleId);
-          if (mem && role) {
-            result.push({
-              assignment: asg,
-              program: prog,
-              role,
-              member: mem,
-              hoursRemaining: Math.max(0, hoursRemaining),
-            });
-          }
-        });
+        const diffMs = serviceStart.getTime() - now.getTime();
+        const diffHours = diffMs / (1000 * 60 * 60);
+
+        if (diffHours > 0 && diffHours <= 24) {
+          const progAssignments = assignments.filter((a) => a.programId === prog.id);
+
+          progAssignments.forEach((asg) => {
+            if (asg.status === 'pending' && asg.memberId) {
+              const member = members.find((m) => m.id === asg.memberId);
+              const role = roles.find((r) => r.id === asg.roleId);
+
+              if (member && role) {
+                duties.push({
+                  assignment: asg,
+                  program: prog,
+                  member,
+                  role,
+                  hoursRemaining: Math.round(diffHours * 10) / 10,
+                });
+              }
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Error calculating duties for program:', prog.title, err);
       }
     });
 
-    return result;
+    return duties.sort((a, b) => a.hoursRemaining - b.hoursRemaining);
   };
 
   const trigger24HourScan = () => {
@@ -537,7 +578,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       list.forEach(async (item) => {
         if (!item.assignment.remindersSent.includes('24h')) {
           const updatedReminders = [...new Set([...item.assignment.remindersSent, '24h'])];
-          await supabase.from('assignments').update({ remindersSent: updatedReminders }).eq('id', item.assignment.id);
+          if (isSupabaseConfigured) {
+            try {
+              await supabase.from('assignments').update({ remindersSent: updatedReminders }).eq('id', item.assignment.id);
+            } catch (e) {
+              console.warn('Supabase reminder update warning:', e);
+            }
+          }
 
           logAction(
             'Automated 24h Task',
@@ -558,24 +605,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     runScan();
     const interval = setInterval(runScan, 30000);
     return () => clearInterval(interval);
-  }, [programs, assignments, members, roles]);
+  }, [programs, assignments, members]);
 
   const switchAccount = (accountId: string) => {
     const acc = accounts.find((a) => a.id === accountId);
-    if (acc) {
-      setCurrentAccountId(acc.id);
-      setIsLoggedIn(true);
-      sessionStorage.setItem('mediaserve_auth', 'true');
-      sessionStorage.setItem('mediaserve_account_id', acc.id);
-      if (!acc.allowedPortals.includes(activePortal)) setActivePortal(acc.defaultPortal);
-      const mem = members.find((m) => m.id === acc.memberId);
-      showToast(`Logged in as ${mem?.name || acc.email}`);
-    }
+    if (!acc) return;
+    setCurrentAccountId(acc.id);
+    setActivePortal(acc.defaultPortal || 'team');
+    setIsLoggedIn(true);
+    sessionStorage.setItem('mediaserve_auth', 'true');
+    sessionStorage.setItem('mediaserve_account_id', acc.id);
+    resetInactivityTimer();
+    showToast(`Switched account to: ${acc.email}`);
   };
 
   const logout = () => {
     setIsLoggedIn(false);
-    setCurrentAccountId('');
     sessionStorage.removeItem('mediaserve_auth');
     sessionStorage.removeItem('mediaserve_account_id');
     showToast('You have been signed out.');
@@ -608,12 +653,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const registerNewMember = async (data: RegisterMemberData): Promise<{ success: boolean; message: string }> => {
-    const cleanEmail = data.email.trim().toLowerCase();
+    const cleanEmail = sanitizeEmail(data.email);
+    const cleanName = sanitizeText(data.name);
+    const cleanPhone = sanitizePhone(data.phone);
+    const cleanNotes = sanitizeText(data.notes || '');
+    const cleanSkillDesc = sanitizeText(data.rawSkillDescription || '');
 
-    if (!data.name.trim()) return { success: false, message: 'Please provide your full name.' };
+    if (!cleanName) return { success: false, message: 'Please provide your full name.' };
     if (!cleanEmail || !cleanEmail.includes('@')) return { success: false, message: 'Please provide a valid email address.' };
-    if (!data.phone.trim()) return { success: false, message: 'Please provide your WhatsApp / phone number.' };
+    if (!cleanPhone) return { success: false, message: 'Please provide your WhatsApp / phone number.' };
     if (!data.password || data.password.length < 6) return { success: false, message: 'Password must be at least 6 characters long.' };
+
+    // Rate limiting: max 5 registration attempts per 5 minutes per device/email
+    const rateCheck = checkRateLimit('register', cleanEmail, 5, 300000, 300000);
+    if (!rateCheck.allowed) {
+      return { success: false, message: `Too many registration attempts. Please wait ${rateCheck.retryAfterSeconds} seconds.` };
+    }
 
     const existingAcc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
     if (existingAcc) return { success: false, message: 'An account with this email already exists.' };
@@ -621,20 +676,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newMemberId = generateUniqueId('mem');
     const newAccountId = generateUniqueId('acc');
 
+    // Cryptographic PBKDF2 password hashing with random salt
+    const hashedPassword = await hashPassword(data.password);
+
     const newMember: TeamMember = {
       id: newMemberId,
-      name: data.name.trim(),
+      name: cleanName,
       email: cleanEmail,
-      phone: data.phone.trim(),
+      phone: cleanPhone,
       gender: data.gender,
       primaryRole: data.primaryRole,
       secondaryRoles: data.secondaryRoles,
       skillLevel: data.skillLevel,
-      rawSkillDescription: data.rawSkillDescription,
+      rawSkillDescription: cleanSkillDesc,
       availability: data.availability,
       status: 'active',
       joinedDate: new Date().toISOString().split('T')[0],
-      notes: data.notes.trim() || undefined,
+      notes: cleanNotes || undefined,
     };
 
     const newAccount: UserAccount = {
@@ -643,23 +701,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       memberId: newMemberId,
       allowedPortals: ['team'],
       defaultPortal: 'team',
-      password: data.password,
+      password: hashedPassword,
       hasSetPassword: true,
       passwordSetAt: new Date().toISOString(),
     };
 
-    const { error: memErr } = await supabase.from('members').insert([newMember]);
-    if (memErr) {
-      console.error('Error inserting member:', memErr.message);
-      return { success: false, message: `Database Error: ${memErr.message}` };
-    }
-
-    const { error: accErr } = await supabase.from('accounts').insert([newAccount]);
-    if (accErr) {
-      console.error('Error inserting account:', accErr.message);
-      return { success: false, message: `Account Creation Error: ${accErr.message}` };
-    }
-
+    // Update local state and cache immediately so the user is never blocked
     setMembers((prev) => [...prev, newMember]);
     setAccounts((prev) => [...prev, newAccount]);
 
@@ -669,8 +716,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     sessionStorage.setItem('mediaserve_auth', 'true');
     sessionStorage.setItem('mediaserve_account_id', newAccountId);
 
-    await logAction(data.name, 'New Team Member Registration', `Registered via onboarding form as ${roles.find((r) => r.id === data.primaryRole)?.name || 'Media Member'}.`, 'system');
-    showToast(`Welcome to AKWC Media, ${data.name}! Your account is active.`);
+    // If Supabase is configured, sync to database with safety catch
+    if (isSupabaseConfigured) {
+      try {
+        const { error: memErr } = await supabase.from('members').insert([newMember]);
+        if (memErr) {
+          console.warn('Supabase member sync warning (stored in local roster):', memErr.message);
+        }
+        const { error: accErr } = await supabase.from('accounts').insert([newAccount]);
+        if (accErr) {
+          console.warn('Supabase account sync warning (stored in local roster):', accErr.message);
+        }
+      } catch (err: any) {
+        console.warn('Supabase network error during member registration (stored in local roster):', err?.message || err);
+      }
+    }
+
+    await logAction(
+      cleanName,
+      'New Team Member Registration',
+      `Registered via onboarding form as ${roles.find((r) => r.id === data.primaryRole)?.name || 'Media Member'}.`,
+      'system'
+    );
+    showToast(`Welcome to AKWC Media, ${cleanName}! Your account is active.`);
     return { success: true, message: `Account created successfully! Welcome to the team.` };
   };
 
@@ -679,15 +747,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('Access Denied: Only the Super Admin (bernardoobuobi@gmail.com) can access the Admin Portal.');
       return;
     }
-
-    const userHasLeadership = isSuperAdmin || isPatron || currentAccount.allowedPortals.includes('leadership') || Boolean(currentMember?.isLeader);
-
-    if (portal === 'leadership' && !userHasLeadership) {
-      showToast('Access Denied: You do not have Leadership privileges.');
+    if (portal === 'leadership' && !isLeader) {
+      showToast('Access Denied: Leadership clearance required.');
       return;
     }
-
     setActivePortal(portal);
+    resetInactivityTimer();
   };
 
   const updateAccountPrivileges = async (
@@ -696,7 +761,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     defaultPortal?: PortalType
   ): Promise<{ success: boolean; message: string }> => {
     if (!isSuperAdmin) {
-      const msg = 'Security violation: Only the Super Admin (bernardoobuobi@gmail.com) is authorized to assign admin or leader privileges.';
+      const msg = 'Permission Denied: Only the Super Admin (bernardoobuobi@gmail.com) can modify account portal access.';
       showToast(msg);
       return { success: false, message: msg };
     }
@@ -713,10 +778,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isGrantedLeadership = sanitizedPortals.includes('leadership');
     const def = defaultPortal || (isGrantedLeadership ? 'leadership' : 'team');
 
-    await supabase.from('accounts').update({ allowedPortals: sanitizedPortals, defaultPortal: def }).eq('id', targetAccountId);
-    await supabase.from('members').update({ isLeader: isGrantedLeadership }).eq('id', targetAcc.memberId);
-
     setAccounts((prev) => prev.map((a) => (a.id === targetAccountId ? { ...a, allowedPortals: sanitizedPortals, defaultPortal: def } : a)));
+    setMembers((prev) => prev.map((m) => (m.id === targetAcc.memberId ? { ...m, isLeader: isGrantedLeadership } : m)));
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('accounts').update({ allowedPortals: sanitizedPortals, defaultPortal: def }).eq('id', targetAccountId);
+        await supabase.from('members').update({ isLeader: isGrantedLeadership }).eq('id', targetAcc.memberId);
+      } catch (e) {
+        console.warn('Supabase update privileges warning:', e);
+      }
+    }
 
     const mem = members.find((m) => m.id === targetAcc.memberId);
     await logAction(currentMember.name, 'Updated Team Member Privileges', `Super Admin updated permissions for ${mem?.name || targetAcc.email}. Leader status: ${isGrantedLeadership ? 'Granted' : 'Revoked'}.`, 'system');
@@ -731,7 +803,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const newIsLeader = forceStatus !== undefined ? forceStatus : !Boolean(mem.isLeader);
 
-    await supabase.from('members').update({ isLeader: newIsLeader }).eq('id', memberId);
     setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, isLeader: newIsLeader } : m)));
 
     const targetAcc = accounts.find((a) => a.memberId === memberId);
@@ -741,8 +812,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? (Array.from(new Set([...currentAllowed, 'leadership', 'team'])) as PortalType[])
         : (currentAllowed.filter((p) => p !== 'leadership') as PortalType[]);
 
-      await supabase.from('accounts').update({ allowedPortals: newAllowed, defaultPortal: newIsLeader ? 'leadership' : 'team' }).eq('id', targetAcc.id);
       setAccounts((prev) => prev.map((a) => (a.id === targetAcc.id ? { ...a, allowedPortals: newAllowed, defaultPortal: newIsLeader ? 'leadership' : 'team' } : a)));
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('accounts').update({ allowedPortals: newAllowed, defaultPortal: newIsLeader ? 'leadership' : 'team' }).eq('id', targetAcc.id);
+        } catch (e) {
+          console.warn('Supabase update account warning:', e);
+        }
+      }
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('members').update({ isLeader: newIsLeader }).eq('id', memberId);
+      } catch (e) {
+        console.warn('Supabase update member warning:', e);
+      }
     }
 
     const msg = newIsLeader ? `${mem.name} is now a Media Leader!` : `Revoked leadership privileges for ${mem.name}.`;
@@ -751,7 +837,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const setupFirstTimePassword = async (email: string, newPassword: string): Promise<{ success: boolean; message: string }> => {
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = sanitizeEmail(email);
+
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, message: 'Password must be at least 6 characters long.' };
+    }
     
     let acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
     let mem = members.find((m) => m.email.toLowerCase() === cleanEmail);
@@ -759,6 +849,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!acc && mem) {
       acc = accounts.find((a) => a.memberId === mem.id);
     }
+
+    const hashedPassword = await hashPassword(newPassword);
 
     if (!acc && mem) {
       const newAccountId = generateUniqueId('acc');
@@ -768,16 +860,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         memberId: mem.id,
         allowedPortals: ['team'],
         defaultPortal: 'team',
-        password: newPassword,
+        password: hashedPassword,
         hasSetPassword: true,
         passwordSetAt: new Date().toISOString(),
       };
-      await supabase.from('accounts').insert([acc]);
       setAccounts((prev) => [...prev, acc!]);
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('accounts').insert([acc]);
+        } catch (e) {
+          console.warn('Supabase insert account warning:', e);
+        }
+      }
     } else if (acc) {
-      const { error } = await supabase.from('accounts').update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() }).eq('id', acc.id);
-      if (error) return { success: false, message: error.message };
-      setAccounts((prev) => prev.map((a) => (a.id === acc!.id ? { ...a, password: newPassword, hasSetPassword: true } : a)));
+      setAccounts((prev) => prev.map((a) => (a.id === acc!.id ? { ...a, password: hashedPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() } : a)));
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('accounts').update({ password: hashedPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() }).eq('id', acc.id);
+        } catch (e) {
+          console.warn('Supabase update account warning:', e);
+        }
+      }
     } else {
       return { success: false, message: 'Email not found on media team roster.' };
     }
@@ -788,38 +893,111 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     sessionStorage.setItem('mediaserve_account_id', acc.id);
 
     showToast(`Welcome ${mem?.name || cleanEmail}! Account activated.`);
-    return { success: true, message: 'Account activated successfully!' };
+    return { success: true, message: 'Password set successfully.' };
   };
 
-  const loginWithPassword = async (email: string, password: string) => {
-    const cleanEmail = email.trim().toLowerCase();
-    const acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+  const loginWithPassword = async (email: string, password: string): Promise<{ success: boolean; message: string; requiresSetup?: boolean }> => {
+    const cleanEmail = sanitizeEmail(email);
 
-    if (!acc) return { success: false, message: 'No account found with this email.' };
-    if (!acc.hasSetPassword) return { success: false, requiresSetup: true, message: 'Please set your password first.' };
-    if (acc.password !== password) return { success: false, message: 'Incorrect password.' };
+    // Rate limiting: max 5 failed attempts per 60 seconds
+    const rateCheck = checkRateLimit('login', cleanEmail, 5, 60000, 60000);
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        message: `Too many failed login attempts. Account temporarily locked for security. Please try again in ${rateCheck.retryAfterSeconds} seconds.`,
+      };
+    }
 
-    setCurrentAccountId(acc.id);
-    setIsLoggedIn(true);
-    sessionStorage.setItem('mediaserve_auth', 'true');
-    sessionStorage.setItem('mediaserve_account_id', acc.id);
+    let acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
+    let mem = members.find((m) => m.email.toLowerCase() === cleanEmail);
 
-    const mem = members.find((m) => m.id === acc.memberId);
-    showToast(`Welcome back, ${mem?.name || acc.email}!`);
-    return { success: true, message: `Welcome back, ${mem?.name || acc.email}!` };
+    if (!acc && mem) {
+      acc = accounts.find((a) => a.memberId === mem.id);
+    }
+
+    if (!acc && !mem) {
+      recordFailedAttempt('login', cleanEmail, 5, 60000, 60000);
+      return { success: false, message: 'No registered media member found with this email.' };
+    }
+
+    if (acc && !acc.hasSetPassword) {
+      return { success: false, message: 'You have not set your password yet. Please create one.', requiresSetup: true };
+    }
+
+    if (!acc && mem) {
+      return { success: false, message: 'You are registered on the roster but need to set your password first.', requiresSetup: true };
+    }
+
+    const isMatch = await verifyPassword(password, acc?.password);
+    if (!isMatch) {
+      recordFailedAttempt('login', cleanEmail, 5, 60000, 60000);
+      const remaining = rateCheck.remainingAttempts - 1;
+      const warning = remaining > 0 ? ` (${remaining} attempt${remaining === 1 ? '' : 's'} remaining)` : '';
+      return { success: false, message: `Incorrect password.${warning} Try again or use Forgot Password.` };
+    }
+
+    // Success: reset rate limit counter
+    resetRateLimit('login', cleanEmail);
+
+    // Auto-upgrade legacy unhashed password to PBKDF2 hash on the fly
+    if (acc && !isPasswordHashed(acc.password)) {
+      try {
+        const secureHash = await hashPassword(password);
+        setAccounts((prev) => prev.map((a) => (a.id === acc!.id ? { ...a, password: secureHash } : a)));
+        if (isSupabaseConfigured) {
+          await supabase.from('accounts').update({ password: secureHash }).eq('id', acc.id);
+        }
+      } catch (err) {
+        console.warn('Password upgrade warning:', err);
+      }
+    }
+
+    if (acc) {
+      setCurrentAccountId(acc.id);
+      setActivePortal(acc.defaultPortal || 'team');
+      setIsLoggedIn(true);
+      sessionStorage.setItem('mediaserve_auth', 'true');
+      sessionStorage.setItem('mediaserve_account_id', acc.id);
+      resetInactivityTimer();
+      showToast(`Welcome back, ${mem?.name || acc.email}!`);
+      return { success: true, message: 'Sign in successful.' };
+    }
+
+    return { success: false, message: 'Authentication failed.' };
   };
 
   const changePassword = async (newPassword: string) => {
-    await supabase.from('accounts').update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() }).eq('id', currentAccount.id);
-    setAccounts((prev) => prev.map((a) => (a.id === currentAccount.id ? { ...a, password: newPassword, hasSetPassword: true } : a)));
-    showToast('Your password was updated.');
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, message: 'Password must be at least 6 characters long.' };
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+    setAccounts((prev) => prev.map((a) => (a.id === currentAccount.id ? { ...a, password: hashedPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() } : a)));
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('accounts').update({ password: hashedPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() }).eq('id', currentAccount.id);
+      } catch (e) {
+        console.warn('Supabase change password warning:', e);
+      }
+    }
+
+    showToast('Your password was updated securely.');
     return { success: true, message: 'Password updated successfully.' };
   };
 
   const resetPasswordForMember = async (email: string) => {
     const cleanEmail = email.trim().toLowerCase();
-    await supabase.from('accounts').update({ password: null, hasSetPassword: false, passwordSetAt: null }).eq('email', cleanEmail);
     setAccounts((prev) => prev.map((a) => (a.email.toLowerCase() === cleanEmail ? { ...a, password: undefined, hasSetPassword: false } : a)));
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('accounts').update({ password: null, hasSetPassword: false, passwordSetAt: null }).eq('email', cleanEmail);
+      } catch (e) {
+        console.warn('Supabase reset password warning:', e);
+      }
+    }
+
     showToast(`Password reset for ${cleanEmail}.`);
   };
 
@@ -834,10 +1012,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     targetPhone?: string;
     targetEmail?: string;
   }> => {
-    const cleanId = identifier.trim().toLowerCase();
+    const cleanId = sanitizeText(identifier).trim().toLowerCase();
     const cleanPhoneDigits = identifier.replace(/\D/g, '');
 
-    // Match by email or phone
+    // Rate limiting: max 3 password reset requests per 3 minutes
+    const rateCheck = checkRateLimit('pwd_reset', cleanId || cleanPhoneDigits, 3, 180000, 180000);
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        message: `Too many password reset requests. Please wait ${rateCheck.retryAfterSeconds} seconds before requesting a new code.`,
+      };
+    }
+
     const member = members.find((m) => {
       const memEmail = m.email.trim().toLowerCase();
       const memPhoneDigits = m.phone.replace(/\D/g, '');
@@ -858,9 +1044,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const email = account?.email || member?.email || '';
     const phone = member?.phone || '';
 
-    // Generate a secure 6-digit OTP code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
+    const expiresAt = Date.now() + 15 * 60 * 1000;
 
     const resetPayload = {
       code,
@@ -932,6 +1117,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let acc = accounts.find((a) => a.email.toLowerCase() === cleanEmail);
     const mem = members.find((m) => m.id === resetData?.memberId || m.email.toLowerCase() === cleanEmail);
 
+    const hashedPassword = await hashPassword(newPassword);
+
     if (!acc && mem) {
       const newAccountId = generateUniqueId('acc');
       acc = {
@@ -940,29 +1127,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         memberId: mem.id,
         allowedPortals: ['team'],
         defaultPortal: 'team',
-        password: newPassword,
+        password: hashedPassword,
         hasSetPassword: true,
         passwordSetAt: new Date().toISOString(),
       };
-      await supabase.from('accounts').insert([acc]);
       setAccounts((prev) => [...prev, acc!]);
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('accounts').insert([acc]);
+        } catch (e) {
+          console.warn('Supabase insert account warning:', e);
+        }
+      }
     } else if (acc) {
-      const { error } = await supabase
-        .from('accounts')
-        .update({ password: newPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() })
-        .eq('id', acc.id);
-      if (error) return { success: false, message: error.message };
       setAccounts((prev) =>
-        prev.map((a) => (a.id === acc!.id ? { ...a, password: newPassword, hasSetPassword: true } : a))
+        prev.map((a) => (a.id === acc!.id ? { ...a, password: hashedPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() } : a))
       );
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase
+            .from('accounts')
+            .update({ password: hashedPassword, hasSetPassword: true, passwordSetAt: new Date().toISOString() })
+            .eq('id', acc.id);
+        } catch (e) {
+          console.warn('Supabase update account password warning:', e);
+        }
+      }
     } else {
       return { success: false, message: 'Account not found to update password.' };
     }
 
-    // Clean up reset session
     sessionStorage.removeItem('mediaserve_pwd_reset');
 
-    // Automatically log in
     setCurrentAccountId(acc.id);
     setIsLoggedIn(true);
     sessionStorage.setItem('mediaserve_auth', 'true');
@@ -989,7 +1187,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type,
     };
     setAuditLogs((prev) => [newLog, ...prev.slice(0, 49)]);
-    await supabase.from('audit_logs').insert([newLog]);
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('audit_logs').insert([newLog]);
+      } catch (e) {
+        console.warn('Supabase logAction warning:', e);
+      }
+    }
   };
 
   const confirmAttendance = async (assignmentId: string, arrivalComment?: string, estimatedArrivalTime?: string) => {
@@ -1004,18 +1209,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         estimatedArrivalTime: estimatedArrivalTime?.trim() || undefined,
         declineReason: undefined,
       };
-      await supabase.from('assignments').upsert([newAsg]);
       setAssignments((prev) => [...prev, newAsg]);
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('assignments').upsert([newAsg]);
+        } catch (e) {
+          console.warn('Supabase confirmAttendance upsert warning:', e);
+        }
+      }
     } else {
-      await supabase.from('assignments').update({ status: 'confirmed', confirmedAt: new Date().toISOString(), arrivalComment: arrivalComment?.trim() || null, estimatedArrivalTime: estimatedArrivalTime?.trim() || null, declineReason: null }).eq('id', assignmentId);
       setAssignments((prev) => prev.map((a) => (a.id === assignmentId ? { ...a, status: 'confirmed', confirmedAt: new Date().toISOString(), arrivalComment: arrivalComment?.trim() || undefined, estimatedArrivalTime: estimatedArrivalTime?.trim() || undefined } : a)));
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('assignments').update({ status: 'confirmed', confirmedAt: new Date().toISOString(), arrivalComment: arrivalComment?.trim() || null, estimatedArrivalTime: estimatedArrivalTime?.trim() || null, declineReason: null }).eq('id', assignmentId);
+        } catch (e) {
+          console.warn('Supabase confirmAttendance update warning:', e);
+        }
+      }
     }
     showToast('Attendance confirmed! Thank you for your service.');
   };
 
   const declineAttendance = async (assignmentId: string, reason: string) => {
-    await supabase.from('assignments').update({ status: 'declined', declineReason: reason || 'Not specified' }).eq('id', assignmentId);
     setAssignments((prev) => prev.map((a) => (a.id === assignmentId ? { ...a, status: 'declined', declineReason: reason || 'Not specified' } : a)));
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('assignments').update({ status: 'declined', declineReason: reason || 'Not specified' }).eq('id', assignmentId);
+      } catch (e) {
+        console.warn('Supabase declineAttendance warning:', e);
+      }
+    }
+
     showToast('Declined. Leadership notified.');
   };
 
@@ -1023,12 +1250,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const existing = assignments.find((a) => a.programId === programId && a.roleId === roleId);
 
     if (existing) {
-      await supabase.from('assignments').update({ memberId, status: 'pending', declineReason: null, confirmedAt: null }).eq('id', existing.id);
       setAssignments((prev) => prev.map((a) => (a.id === existing.id ? { ...a, memberId, status: 'pending' } : a)));
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('assignments').update({ memberId, status: 'pending', declineReason: null, confirmedAt: null }).eq('id', existing.id);
+        } catch (e) {
+          console.warn('Supabase assignMemberToRole update warning:', e);
+        }
+      }
     } else {
       const newAsg: RoleAssignment = { id: generateUniqueId('asg'), programId, roleId, memberId, status: 'pending', remindersSent: [] };
-      await supabase.from('assignments').insert([newAsg]);
       setAssignments((prev) => [...prev, newAsg]);
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('assignments').insert([newAsg]);
+        } catch (e) {
+          console.warn('Supabase assignMemberToRole insert warning:', e);
+        }
+      }
     }
     showToast('Member assigned.');
   };
@@ -1055,8 +1296,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (newAssignments.length > 0) {
-      await supabase.from('assignments').insert(newAssignments);
       setAssignments((prev) => [...prev, ...newAssignments]);
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('assignments').insert(newAssignments);
+        } catch (e) {
+          console.warn('Supabase autoFillRoster insert warning:', e);
+        }
+      }
+
       showToast(`Auto-filled ${newAssignments.length} positions!`);
     } else {
       showToast('No available matching candidates for open roles.');
@@ -1064,14 +1313,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const removeAssignment = async (assignmentId: string) => {
-    await supabase.from('assignments').delete().eq('id', assignmentId);
     setAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('assignments').delete().eq('id', assignmentId);
+      } catch (e) {
+        console.warn('Supabase removeAssignment warning:', e);
+      }
+    }
+
     showToast('Assignment removed.');
   };
 
   const replaceAssignment = async (assignmentId: string, newMemberId: string) => {
-    await supabase.from('assignments').update({ memberId: newMemberId, status: 'pending', declineReason: null, confirmedAt: null }).eq('id', assignmentId);
     setAssignments((prev) => prev.map((a) => (a.id === assignmentId ? { ...a, memberId: newMemberId, status: 'pending', declineReason: undefined } : a)));
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('assignments').update({ memberId: newMemberId, status: 'pending', declineReason: null, confirmedAt: null }).eq('id', assignmentId);
+      } catch (e) {
+        console.warn('Supabase replaceAssignment warning:', e);
+      }
+    }
+
     showToast('Replacement candidate assigned!');
   };
 
@@ -1081,62 +1346,113 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const createProgram = async (newProg: Omit<ProgramService, 'id'>): Promise<string> => {
     const id = generateUniqueId('prog');
-    const program: ProgramService = { ...newProg, id };
-    const { error } = await supabase.from('programs').insert([program]);
-    
-    if (error) {
-      console.error('Error saving program:', error.message);
-      showToast(`Database Error: ${error.message}`);
-      return '';
+    const program: ProgramService = {
+      ...newProg,
+      id,
+      title: sanitizeText(newProg.title),
+      location: sanitizeText(newProg.location),
+      directorName: sanitizeText(newProg.directorName),
+      theme: newProg.theme ? sanitizeText(newProg.theme) : undefined,
+    };
+    setPrograms((prev) => [program, ...prev]);
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('programs').insert([program]);
+        if (error) {
+          console.warn('Supabase createProgram warning:', error.message);
+        }
+      } catch (e) {
+        console.warn('Supabase createProgram warning:', e);
+      }
     }
     
-    setPrograms((prev) => [program, ...prev]);
     showToast('Service created successfully!');
     return id;
   };
 
   const updateProgram = async (updatedProg: ProgramService) => {
-    const { error } = await supabase.from('programs').update(updatedProg).eq('id', updatedProg.id);
-    if (error) {
-      showToast(`Database Error: ${error.message}`);
-      return;
+    const sanitized: ProgramService = {
+      ...updatedProg,
+      title: sanitizeText(updatedProg.title),
+      location: sanitizeText(updatedProg.location),
+      directorName: sanitizeText(updatedProg.directorName),
+      theme: updatedProg.theme ? sanitizeText(updatedProg.theme) : undefined,
+    };
+    setPrograms((prev) => prev.map((p) => (p.id === sanitized.id ? sanitized : p)));
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('programs').update(sanitized).eq('id', sanitized.id);
+        if (error) console.warn('Supabase updateProgram warning:', error.message);
+      } catch (e) {
+        console.warn('Supabase updateProgram warning:', e);
+      }
     }
-    setPrograms((prev) => prev.map((p) => (p.id === updatedProg.id ? updatedProg : p)));
+
     showToast('Service updated.');
   };
 
   const deleteProgram = async (programId: string) => {
-    const { error } = await supabase.from('programs').delete().eq('id', programId);
-    if (error) {
-      showToast(`Database Error: ${error.message}`);
-      return;
-    }
-    await supabase.from('assignments').delete().eq('programId', programId);
     setPrograms((prev) => prev.filter((p) => p.id !== programId));
     setAssignments((prev) => prev.filter((a) => a.programId !== programId));
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('programs').delete().eq('id', programId);
+        await supabase.from('assignments').delete().eq('programId', programId);
+      } catch (e) {
+        console.warn('Supabase deleteProgram warning:', e);
+      }
+    }
+
     showToast('Service deleted.');
   };
 
   const addMember = async (member: Omit<TeamMember, 'id'>): Promise<string> => {
     const id = generateUniqueId('mem');
-    const newMember: TeamMember = { ...member, id };
-    const { error } = await supabase.from('members').insert([newMember]);
-    if (error) {
-      showToast(`Database Error: ${error.message}`);
-      return '';
-    }
+    const newMember: TeamMember = {
+      ...member,
+      id,
+      name: sanitizeText(member.name),
+      email: sanitizeEmail(member.email),
+      phone: sanitizePhone(member.phone),
+      notes: member.notes ? sanitizeText(member.notes) : undefined,
+    };
     setMembers((prev) => [...prev, newMember]);
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('members').insert([newMember]);
+        if (error) console.warn('Supabase addMember warning:', error.message);
+      } catch (e) {
+        console.warn('Supabase addMember warning:', e);
+      }
+    }
+
     showToast(`Added ${newMember.name} to roster.`);
     return id;
   };
 
   const updateMember = async (member: TeamMember) => {
-    const { error } = await supabase.from('members').update(member).eq('id', member.id);
-    if (error) {
-      showToast(`Database Error: ${error.message}`);
-      return;
+    const sanitized: TeamMember = {
+      ...member,
+      name: sanitizeText(member.name),
+      email: sanitizeEmail(member.email),
+      phone: sanitizePhone(member.phone),
+      notes: member.notes ? sanitizeText(member.notes) : undefined,
+    };
+    setMembers((prev) => prev.map((m) => (m.id === sanitized.id ? sanitized : m)));
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('members').update(sanitized).eq('id', sanitized.id);
+        if (error) console.warn('Supabase updateMember warning:', error.message);
+      } catch (e) {
+        console.warn('Supabase updateMember warning:', e);
+      }
     }
-    setMembers((prev) => prev.map((m) => (m.id === member.id ? member : m)));
+
     showToast('Member details updated.');
   };
 
@@ -1145,62 +1461,130 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast('Permission Denied: Only the Super Admin (bernardoobuobi@gmail.com) can delete team members.');
       return;
     }
-    const { error } = await supabase.from('members').delete().eq('id', memberId);
-    if (error) {
-      showToast(`Database Error: ${error.message}`);
-      return;
-    }
-    await supabase.from('accounts').delete().eq('memberId', memberId);
-
     setMembers((prev) => prev.filter((m) => m.id !== memberId));
     setAccounts((prev) => prev.filter((a) => a.memberId !== memberId));
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('members').delete().eq('id', memberId);
+        await supabase.from('accounts').delete().eq('memberId', memberId);
+      } catch (e) {
+        console.warn('Supabase deleteMember warning:', e);
+      }
+    }
+
     showToast('Member deleted.');
   };
 
   const addAnnouncement = async (announcement: Omit<Announcement, 'id'>) => {
     const id = generateUniqueId('ann');
-    const newAnn: Announcement = { ...announcement, id };
-    const { error } = await supabase.from('announcements').insert([newAnn]);
-    if (error) {
-      showToast(`Database Error: ${error.message}`);
-      return;
-    }
+    const newAnn: Announcement = {
+      ...announcement,
+      id,
+      title: sanitizeText(announcement.title),
+      content: sanitizeText(announcement.content),
+      author: sanitizeText(announcement.author),
+    };
     setAnnouncements((prev) => [newAnn, ...prev]);
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('announcements').insert([newAnn]);
+        if (error) console.warn('Supabase addAnnouncement warning:', error.message);
+      } catch (e) {
+        console.warn('Supabase addAnnouncement warning:', e);
+      }
+    }
+
     showToast('Announcement posted!');
   };
 
   const deleteAnnouncement = async (id: string) => {
-    const { error } = await supabase.from('announcements').delete().eq('id', id);
-    if (error) {
-      showToast(`Database Error: ${error.message}`);
-      return;
-    }
     setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('announcements').delete().eq('id', id);
+        if (error) console.warn('Supabase deleteAnnouncement warning:', error.message);
+      } catch (e) {
+        console.warn('Supabase deleteAnnouncement warning:', e);
+      }
+    }
+
     showToast('Announcement removed.');
   };
 
   const updateVerse = async (newVerse: VerseOfTheDay) => {
-    const { error } = await supabase.from('verse').upsert([newVerse]);
-    if (error) {
-      showToast(`Database Error: ${error.message}`);
-      return;
-    }
     setVerse(newVerse);
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('verse').upsert([newVerse]);
+        if (error) console.warn('Supabase updateVerse warning:', error.message);
+      } catch (e) {
+        console.warn('Supabase updateVerse warning:', e);
+      }
+    }
+
     showToast('Verse updated.');
   };
 
   const updateReminderConfig = async (config: ReminderConfig) => {
-    const { error } = await supabase.from('reminder_config').upsert([config]);
-    if (error) {
-      showToast(`Database Error: ${error.message}`);
-      return;
-    }
     setReminderConfig(config);
+
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('reminder_config').upsert([config]);
+        if (error) console.warn('Supabase updateReminderConfig warning:', error.message);
+      } catch (e) {
+        console.warn('Supabase updateReminderConfig warning:', e);
+      }
+    }
+
     showToast('Reminder settings updated.');
   };
 
   const resetToDefaults = async () => {
-    showToast('Data reset triggered.');
+    setRoles(INITIAL_ROLES);
+    setMembers(INITIAL_MEMBERS);
+    setAccounts(INITIAL_ACCOUNTS);
+    setPrograms(INITIAL_PROGRAMS);
+    setAssignments(INITIAL_ASSIGNMENTS);
+    setAnnouncements(INITIAL_ANNOUNCEMENTS);
+    setVerse(INITIAL_VERSE);
+    setReminderConfig(INITIAL_REMINDER_CONFIG);
+    setAuditLogs([]);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('akwc_roles', JSON.stringify(INITIAL_ROLES));
+      localStorage.setItem('akwc_members', JSON.stringify(INITIAL_MEMBERS));
+      localStorage.setItem('akwc_accounts', JSON.stringify(INITIAL_ACCOUNTS));
+      localStorage.setItem('akwc_programs', JSON.stringify(INITIAL_PROGRAMS));
+      localStorage.setItem('akwc_assignments', JSON.stringify(INITIAL_ASSIGNMENTS));
+      localStorage.setItem('akwc_announcements', JSON.stringify(INITIAL_ANNOUNCEMENTS));
+      localStorage.setItem('akwc_verse', JSON.stringify(INITIAL_VERSE));
+      localStorage.setItem('akwc_reminder_config', JSON.stringify(INITIAL_REMINDER_CONFIG));
+      localStorage.removeItem('akwc_audit_logs');
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        await Promise.allSettled([
+          supabase.from('roles').upsert(INITIAL_ROLES),
+          supabase.from('members').upsert(INITIAL_MEMBERS),
+          supabase.from('accounts').upsert(INITIAL_ACCOUNTS),
+          supabase.from('programs').upsert(INITIAL_PROGRAMS),
+          supabase.from('assignments').upsert(INITIAL_ASSIGNMENTS),
+          supabase.from('announcements').upsert(INITIAL_ANNOUNCEMENTS),
+          supabase.from('verse').upsert([INITIAL_VERSE]),
+          supabase.from('reminder_config').upsert([INITIAL_REMINDER_CONFIG]),
+        ]);
+      } catch (err) {
+        console.warn('Could not reset Supabase remote database:', err);
+      }
+    }
+
+    showToast('Reset system to initial AKWC Media state.');
   };
 
   return (

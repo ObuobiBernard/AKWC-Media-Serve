@@ -16,15 +16,49 @@ import { InactivityWarningModal } from './components/shared/InactivityWarningMod
 import { DirectConfirmationModal } from './components/shared/DirectConfirmationModal';
 import { Automated24HourReminderModal } from './components/shared/Automated24HourReminderModal';
 import { LegalModal, LegalTab } from './components/shared/LegalModal';
+import { ShieldAlert } from 'lucide-react';
 
 const MainContent: React.FC = () => {
-  const { activePortal } = useApp();
+  const { activePortal, isSuperAdmin, isLeader } = useApp();
+
+  // Enforce Route-Level RBAC Security
+  if (activePortal === 'admin' && !isSuperAdmin) {
+    return (
+      <main className="w-full max-w-2xl mx-auto px-4 py-16 flex-1 text-center">
+        <div className="p-8 bg-slate-900 border border-rose-500/30 rounded-2xl shadow-xl shadow-rose-950/20 space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-bold text-white">Access Denied: Super Admin Clearance Required</h2>
+          <p className="text-xs text-slate-400 leading-relaxed max-w-md mx-auto">
+            Only the designated Super Administrator (<code className="text-amber-400 font-mono">bernardoobuobi@gmail.com</code>) has authorization to view and manage the system Admin Console.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (activePortal === 'leadership' && !isLeader) {
+    return (
+      <main className="w-full max-w-2xl mx-auto px-4 py-16 flex-1 text-center">
+        <div className="p-8 bg-slate-900 border border-amber-500/30 rounded-2xl shadow-xl shadow-amber-950/20 space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-7 h-7" />
+          </div>
+          <h2 className="text-lg font-bold text-white">Access Restricted: Leadership Clearance Required</h2>
+          <p className="text-xs text-slate-400 leading-relaxed max-w-md mx-auto">
+            You must be assigned Leadership privileges to view and manage leadership roster functions.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="w-full max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 py-4 sm:py-8 flex-1 min-w-0">
       {activePortal === 'team' && <TeamPortal />}
-      {activePortal === 'leadership' && <LeadershipPortal />}
-      {activePortal === 'admin' && <AdminPortal />}
+      {activePortal === 'leadership' && isLeader && <LeadershipPortal />}
+      {activePortal === 'admin' && isSuperAdmin && <AdminPortal />}
     </main>
   );
 };
