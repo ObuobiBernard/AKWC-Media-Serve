@@ -294,8 +294,8 @@ export const TeamPortal: React.FC = () => {
         </section>
       )}
 
-      {/* Mobile-Optimized Tab Navigation */}
-      <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 gap-1 overflow-x-auto shadow-md">
+      {/* Desktop / Tablet Tab Navigation (Hidden on small mobile screens) */}
+      <div className="hidden md:flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 gap-1 overflow-x-auto shadow-md">
         <button
           onClick={() => setActiveTab('duties')}
           className={`flex-1 min-w-[110px] py-3 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
@@ -339,6 +339,43 @@ export const TeamPortal: React.FC = () => {
         >
           <User className="w-4 h-4 shrink-0" />
           <span>My Profile</span>
+        </button>
+      </div>
+
+      {/* Mobile Bottom Tab Bar Navigation (Visible only on smaller screens) */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-4 py-2 flex items-center justify-around shadow-2xl">
+        <button
+          onClick={() => setActiveTab('duties')}
+          className={`flex flex-col items-center gap-1 py-1 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'duties' || activeTab === 'verse'
+              ? 'text-amber-400'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Radio className="w-5 h-5" />
+          <span>Team</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('schedule')}
+          className={`flex flex-col items-center gap-1 py-1 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'schedule'
+              ? 'text-amber-400'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Calendar className="w-5 h-5" />
+          <span>Schedule</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('profile')}
+          className={`flex flex-col items-center gap-1 py-1 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeTab === 'profile'
+              ? 'text-amber-400'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <User className="w-5 h-5" />
+          <span>Profile</span>
         </button>
       </div>
 
