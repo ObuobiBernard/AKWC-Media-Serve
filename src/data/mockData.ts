@@ -698,11 +698,68 @@ export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
   },
 ];
 
-export const INITIAL_VERSE: VerseOfTheDay = {
-  verse: 'Whatever you do, work at it with all your heart, as working for the Lord, not for human masters, since you know that you will receive an inheritance from the Lord as a reward. It is the Lord Christ you are serving.',
-  reference: 'Colossians 3:23-24 (NIV)',
-  reflection: 'Every camera zoom, sound balance, audio slider adjustment, and projection cue in God’s house is an act of high worship. When people hear the Word clearly and praise without distraction, our silent service brings glory to the King.',
-  date: '2026-10-03',
+export const INSPIRATIONAL_VERSES: VerseOfTheDay[] = [
+  {
+    verse: 'Whatever you do, work at it with all your heart, as working for the Lord, not for human masters, since you know that you will receive an inheritance from the Lord as a reward. It is the Lord Christ you are serving.',
+    reference: 'Colossians 3:23-24 (NIV)',
+    reflection: 'Every camera zoom, sound balance, audio slider adjustment, and projection cue in God’s house is an act of high worship. When people hear the Word clearly and praise without distraction, our silent service brings glory to the King.',
+    date: '2026-10-03',
+  },
+  {
+    verse: 'Therefore, my dear brothers and sisters, stand firm. Let nothing move you. Always give yourselves fully to the work of the Lord, because you know that your labor in the Lord is not in vain.',
+    reference: '1 Corinthians 15:58 (NIV)',
+    reflection: 'Diligence in ministry matters. Whether arriving early for call time or setting up equipment with care, your labor builds the Kingdom.',
+    date: '2026-10-04',
+  },
+  {
+    verse: 'Every skilled woman and man whose heart was stirred and who had wisdom brought their God-given gifts and worked willingly for the glory of the Lord.',
+    reference: 'Exodus 35:25-26 (Adapted)',
+    reflection: 'Working with God means offering our unique technical and creative talents as sacred instruments for souls to encounter His presence.',
+    date: '2026-10-05',
+  },
+  {
+    verse: 'Do you see someone skilled in their work? They will serve before kings; they will not serve before obscure officials.',
+    reference: 'Proverbs 22:29 (NIV)',
+    reflection: 'Excellence honors God and inspires people. When we hone our media and technical craft, we open doors to influence lives for Christ.',
+    date: '2026-10-06',
+  },
+  {
+    verse: 'And whatever you do, whether in word or deed, do it all in the name of the Lord Jesus, giving thanks to God the Father through him.',
+    reference: 'Colossians 3:17 (NIV)',
+    reflection: 'Gratitude transforms routine duties into joyful ministry. We serve with gladness because Christ has entrusted us with His message.',
+    date: '2026-10-07',
+  },
+  {
+    verse: 'Whatever your hand finds to do, do it with all your might, for in the realm of the dead... there is neither working nor planning nor knowledge nor wisdom.',
+    reference: 'Ecclesiastes 9:10 (NIV)',
+    reflection: 'Seize every Sunday and midweek opportunity to give your absolute best in media service for the Lord.',
+    date: '2026-10-08',
+  },
+  {
+    verse: 'Never be lacking in zeal, but keep your spiritual fervor, serving the Lord.',
+    reference: 'Romans 12:11 (NIV)',
+    reflection: 'A vibrant spirit fuels our technical dedication. Let enthusiasm and love for God’s house shine through every broadcast and projection.',
+    date: '2026-10-09',
+  },
+  {
+    verse: 'His master replied, "Well done, good and faithful servant! You have been faithful with a few things; I will put you in charge of many things. Come and share your master\'s happiness!"',
+    reference: 'Matthew 25:21 (NIV)',
+    reflection: 'Faithfulness in small behind-the-scenes tasks prepares us for greater spiritual breakthroughs and divine trust.',
+    date: '2026-10-10',
+  },
+  {
+    verse: 'Service rendered to God with a joyful heart is never small in His eyes; every camera angle, sound check, and projection slide is an offering of worship.',
+    reference: 'AKWC Media Ministry Quotation',
+    reflection: 'When we give what we have with open hearts, God multiplies our efforts to touch thousands.',
+    date: '2026-10-11',
+  },
+];
+
+export const INITIAL_VERSE: VerseOfTheDay =
+  INSPIRATIONAL_VERSES[Math.floor(Math.random() * INSPIRATIONAL_VERSES.length)];
+
+export const getRandomInspirationalVerse = (): VerseOfTheDay => {
+  return INSPIRATIONAL_VERSES[Math.floor(Math.random() * INSPIRATIONAL_VERSES.length)];
 };
 
 export const INITIAL_REMINDER_CONFIG: ReminderConfig = {

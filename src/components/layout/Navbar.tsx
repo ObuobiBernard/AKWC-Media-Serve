@@ -2,9 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { PortalType } from '../../types';
 import { AccountSwitcherModal } from '../auth/AccountSwitcherModal';
-import { SupabaseConfigModal } from '../shared/SupabaseConfigModal';
 import { PWAInstallButton } from '../shared/PWAInstallButton';
-import { RotateCcw, User, Shield, Users, Radio, ChevronDown, LogOut, Database } from 'lucide-react';
+import { RotateCcw, User, Shield, Radio, ChevronDown, LogOut } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   const {
@@ -16,11 +15,9 @@ export const Navbar: React.FC = () => {
     logout,
     isSuperAdmin,
     isLeader,
-    isSupabaseConfigured,
   } = useApp();
 
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
 
   const hasLeadership =
     isSuperAdmin ||
@@ -89,20 +86,7 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center gap-2 sm:gap-3">
             <PWAInstallButton />
 
-            <button
-              onClick={() => setIsSupabaseModalOpen(true)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
-                isSupabaseConfigured
-                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25 hover:bg-emerald-500/20'
-                  : 'bg-amber-500/10 text-amber-300 border-amber-500/25 hover:bg-amber-500/20 animate-pulse'
-              }`}
-              title={isSupabaseConfigured ? 'Supabase Database Connected' : 'Supabase Setup Required - Click to connect'}
-            >
-              <Database className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">
-                {isSupabaseConfigured ? 'DB Live' : 'Connect DB'}
-              </span>
-            </button>
+
 
             <button
               onClick={() => setIsAccountModalOpen(true)}
@@ -139,10 +123,7 @@ export const Navbar: React.FC = () => {
         onClose={() => setIsAccountModalOpen(false)}
       />
 
-      <SupabaseConfigModal
-        isOpen={isSupabaseModalOpen}
-        onClose={() => setIsSupabaseModalOpen(false)}
-      />
+
     </>
   );
 };

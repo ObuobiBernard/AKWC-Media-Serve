@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { RegisterMemberData, SkillLevel } from '../../types';
 import { PasswordResetModal } from './PasswordResetModal';
 import { LegalModal, LegalTab } from '../shared/LegalModal';
-import { SupabaseConfigModal } from '../shared/SupabaseConfigModal';
+
 import {
   Lock,
   Mail,
@@ -65,8 +65,7 @@ export const LoginPage: React.FC = () => {
   const [showLegalModal, setShowLegalModal] = useState(false);
   const [legalTab, setLegalTab] = useState<LegalTab>('privacy');
 
-  // Supabase modal state
-  const [showSupabaseModal, setShowSupabaseModal] = useState(false);
+
 
   // Registration form state
   const [regData, setRegData] = useState<RegisterMemberData>({
@@ -895,14 +894,6 @@ export const LoginPage: React.FC = () => {
             >
               Ministry Charter
             </button>
-            <span>·</span>
-            <button
-              type="button"
-              onClick={() => setShowSupabaseModal(true)}
-              className="hover:text-emerald-400 text-emerald-400/90 font-medium transition-colors"
-            >
-              Supabase DB
-            </button>
           </div>
           <div className="text-[10px] text-slate-600">
             MediaServe · COP Akweteyman Worship Center (Achimota Area, Accra)
@@ -921,11 +912,6 @@ export const LoginPage: React.FC = () => {
         isOpen={showLegalModal}
         onClose={() => setShowLegalModal(false)}
         defaultTab={legalTab}
-      />
-
-      <SupabaseConfigModal
-        isOpen={showSupabaseModal}
-        onClose={() => setShowSupabaseModal(false)}
       />
     </div>
   );
