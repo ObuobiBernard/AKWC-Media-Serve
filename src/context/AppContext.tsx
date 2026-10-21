@@ -466,6 +466,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const action = urlParams.get('action');
 
       if (action === 'confirm' && (asgId || urlParams.get('prog') || urlParams.get('role'))) {
+        if (!isLoggedIn) {
+          showToast('Please sign in to MediaServe first to confirm or decline your attendance.');
+          if (typeof window !== 'undefined') {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+          return;
+        }
+
         let foundAsg = assignments.find((a) => a.id === asgId);
         const targetMemId = urlParams.get('mem') || foundAsg?.memberId;
         const targetProgId = urlParams.get('prog') || foundAsg?.programId;
@@ -527,7 +535,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
       console.warn('Error reading confirm link:', e);
     }
-  }, [assignments, programs, roles, members]);
+  }, [assignments, programs, roles, members, isLoggedIn]);
 
   const calculatePending24HourDuties = (): Pending24HourDuty[] => {
     const now = new Date();
